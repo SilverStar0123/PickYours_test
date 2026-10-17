@@ -34,10 +34,10 @@ export function extractYouTubeId(input: string): string | null {
     const last = parts[parts.length - 1];
     if (last && /^[a-zA-Z0-9_-]{11}$/.test(last)) return last;
   } catch {
-    const m = s.match(/(?:v=|youtu\.be\/|embed\/|shorts\/)([a-zA-Z0-9_-]{11})/);
-    if (m) return m[1];
+    /* URL 객체 파싱 실패 시 아래 정규식으로 재시도 */
   }
-  return null;
+  const m = s.match(/(?:v=|youtu\.be\/|embed\/|shorts\/|watch\?v=)([a-zA-Z0-9_-]{11})/);
+  return m ? m[1] : null;
 }
 
 // 초보자 모드용 정규화: 소문자 + 전각→반각(NFKC) + 모든 띄어쓰기 및 특수부호(', !, ☆, *, :, - 등) 제거
@@ -90,7 +90,7 @@ export function isCorrectGuess(guess: string, song: SongItem, easyMode: boolean)
   }
 }
 
-// YouTube IFrame API 스크립트를 한 번만 로드
+// YouTube IFrame API 스크립트를 로드하고 YT.Player 객체를 반환 (콜백 누락 대비 폴링 병행)
 let ytApiPromise: Promise<any> | null = null;
 function loadYouTubeApi(): Promise<any> {
   if (typeof window !== "undefined" && (window as any).YT && (window as any).YT.Player) {
@@ -98,15 +98,31 @@ function loadYouTubeApi(): Promise<any> {
   }
   if (ytApiPromise) return ytApiPromise;
   ytApiPromise = new Promise((resolve) => {
+    let resolved = false;
+    const done = () => {
+      if (resolved) return;
+      if ((window as any).YT && (window as any).YT.Player) {
+        resolved = true;
+        resolve((window as any).YT);
+      }
+    };
     const prev = (window as any).onYouTubeIframeAPIReady;
     (window as any).onYouTubeIframeAPIReady = () => {
       if (typeof prev === "function") prev();
-      resolve((window as any).YT);
+      done();
     };
-    const script = document.createElement("script");
-    script.src = "https://www.youtube.com/iframe_api";
-    script.async = true;
-    document.head.appendChild(script);
+    if (!document.querySelector('script[src="https://www.youtube.com/iframe_api"]')) {
+      const script = document.createElement("script");
+      script.src = "https://www.youtube.com/iframe_api";
+      script.async = true;
+      document.head.appendChild(script);
+    }
+    const timer = window.setInterval(() => {
+      if ((window as any).YT && (window as any).YT.Player) {
+        window.clearInterval(timer);
+        done();
+      }
+    }, 100);
   });
   return ytApiPromise;
 }
@@ -118,7 +134,7 @@ export default function SongQuiz({ agencies, lang, t }: SongQuizProps) {
   // 초보자 모드 (띄어쓰기/특수부호 무시 + 자동완성 보기)
   const [easyMode, setEasyMode] = useState<boolean>(true);
 
-  // 선택된 유닛 필터 (기본: 16개 정규 유닛 + songs.csv에 추가된 특별 카테고리(셔플 유닛, 합동곡 등) 자동 포함)
+  // 선택된 유닛 필터 (기본: 16개 정규 유닛 + songs.csv에 추가된 특별 카테고리 자동 포함)
   const allUnits = useMemo(() => {
     const base = agencies.flatMap((a) => a.groups.map((g) => ({ id: g.id, name: g.name })));
     const seen = new Set(base.map((u) => u.id));
@@ -130,6 +146,7 @@ export default function SongQuiz({ agencies, lang, t }: SongQuizProps) {
     });
     return base;
   }, [agencies, songs]);
+
   const unitNameMap = useMemo(() => {
     const m: Record<string, string> = {};
     allUnits.forEach((g) => {
@@ -160,6 +177,9 @@ export default function SongQuiz({ agencies, lang, t }: SongQuizProps) {
 
   // 현재 문제 상태
   const [currentSong, setCurrentSong] = useState<SongItem | null>(null);
+  const currentSongRef = useRef<SongItem | null>(null);
+  currentSongRef.current = currentSong;
+
   const [clipDuration, setClipDuration] = useState<number>(1); // 1초 → 2초 → 3초
   const [startSec, setStartSec] = useState<number>(20);
   const [tries, setTries] = useState<number>(0);
@@ -176,15 +196,18 @@ export default function SongQuiz({ agencies, lang, t }: SongQuizProps) {
 
   // 플레이어 상태
   const playerRef = useRef<any>(null);
+  const playerReadyRef = useRef(false);
   const playerHostRef = useRef<HTMLDivElement>(null);
+  const quizCardRef = useRef<HTMLDivElement>(null);
   const stopTimerRef = useRef<number | null>(null);
+  const loadWatchdogRef = useRef<number | null>(null);
   const pendingPlayRef = useRef(false);
+  const activeVideoIdRef = useRef<string>("");
   const clipDurationRef = useRef(clipDuration);
   clipDurationRef.current = clipDuration;
   const startSecRef = useRef(startSec);
   startSecRef.current = startSec;
 
-  const [playerReady, setPlayerReady] = useState(false);
   const [isPlayingAudio, setIsPlayingAudio] = useState(false);
   const [loadingAudio, setLoadingAudio] = useState(false);
   const [playerError, setPlayerError] = useState(false);
@@ -267,19 +290,206 @@ export default function SongQuiz({ agencies, lang, t }: SongQuizProps) {
     return minS + Math.floor(Math.random() * Math.max(1, maxS - minS));
   };
 
-  const clearStopTimer = () => {
+  const clearTimers = () => {
     if (stopTimerRef.current !== null) {
       window.clearTimeout(stopTimerRef.current);
       stopTimerRef.current = null;
     }
+    if (loadWatchdogRef.current !== null) {
+      window.clearTimeout(loadWatchdogRef.current);
+      loadWatchdogRef.current = null;
+    }
+  };
+
+  const stopPlayerSafely = () => {
+    clearTimers();
+    pendingPlayRef.current = false;
+    setIsPlayingAudio(false);
+    setLoadingAudio(false);
+    try {
+      playerRef.current?.pauseVideo?.();
+    } catch {
+      /* ignore */
+    }
+  };
+
+  // 언마운트 시 플레이어 정리
+  useEffect(() => {
+    return () => {
+      clearTimers();
+      try {
+        playerRef.current?.destroy?.();
+      } catch {
+        /* ignore */
+      }
+      playerRef.current = null;
+      playerReadyRef.current = false;
+    };
+  }, []);
+
+  // 플레이어를 생성하거나(첫 실행 시 반드시 유효한 videoId와 함께 생성!) 이미 생성되어 있으면 해당 영상을 재생
+  const ensurePlayerAndPlay = async (videoId: string, targetStart: number, durSec: number) => {
+    clearTimers();
+    setPlayerError(false);
+    clipDurationRef.current = durSec;
+    startSecRef.current = targetStart;
+    pendingPlayRef.current = true;
+    setLoadingAudio(true);
+
+    // 6초 안에 재생이 시작되지 않으면 '음원 준비 중...' 잠금을 자동으로 풀어 먹통 방지
+    loadWatchdogRef.current = window.setTimeout(() => {
+      setLoadingAudio(false);
+    }, 6000);
+
+    const YT = await loadYouTubeApi();
+    if (!playerHostRef.current) {
+      setLoadingAudio(false);
+      return;
+    }
+
+    // 이미 플레이어가 준비되어 있으면 바로 loadVideoById 또는 seekTo로 재생
+    if (playerRef.current && playerReadyRef.current) {
+      try {
+        if (activeVideoIdRef.current !== videoId) {
+          activeVideoIdRef.current = videoId;
+          playerRef.current.loadVideoById({
+            videoId,
+            startSeconds: targetStart
+          });
+        } else {
+          playerRef.current.seekTo(targetStart, true);
+          playerRef.current.playVideo();
+        }
+        return;
+      } catch {
+        // 기존 플레이어 호출 실패 시 아래에서 새로 생성
+        try {
+          playerRef.current.destroy?.();
+        } catch {
+          /* ignore */
+        }
+        playerRef.current = null;
+        playerReadyRef.current = false;
+      }
+    }
+
+    // 플레이어를 유효한 videoId와 함께 새로 생성 (빈 videoId로 생성하면 onReady가 안 불리므로 반드시 videoId 전달!)
+    const el = document.createElement("div");
+    playerHostRef.current.innerHTML = "";
+    playerHostRef.current.appendChild(el);
+    activeVideoIdRef.current = videoId;
+
+    playerRef.current = new YT.Player(el, {
+      width: "280",
+      height: "158",
+      videoId,
+      playerVars: {
+        autoplay: 1,
+        playsinline: 1,
+        controls: 1,
+        rel: 0,
+        start: Math.floor(targetStart)
+      },
+      events: {
+        onReady: (event: any) => {
+          playerReadyRef.current = true;
+          if (pendingPlayRef.current) {
+            try {
+              event.target.seekTo(startSecRef.current, true);
+              event.target.playVideo();
+            } catch {
+              /* ignore */
+            }
+          }
+        },
+        onStateChange: (event: any) => {
+          // YT.PlayerState.PLAYING === 1
+          if (event.data === 1) {
+            if (loadWatchdogRef.current !== null) {
+              window.clearTimeout(loadWatchdogRef.current);
+              loadWatchdogRef.current = null;
+            }
+            setLoadingAudio(false);
+            setIsPlayingAudio(true);
+            setPlayerError(false);
+
+            // 커스텀 링크 테스트 시 정답 제목을 안 적었다면 유튜브 실제 영상 제목으로 자동 채움
+            try {
+              const fetchedTitle = event.target?.getVideoData?.()?.title;
+              if (
+                fetchedTitle &&
+                currentSongRef.current &&
+                currentSongRef.current.id.startsWith("custom-") &&
+                currentSongRef.current.titleKo === "유튜브 테스트 곡"
+              ) {
+                setCurrentSong((prev) =>
+                  prev
+                    ? {
+                        ...prev,
+                        titleKo: fetchedTitle,
+                        titleEn: fetchedTitle,
+                        titleJa: fetchedTitle
+                      }
+                    : prev
+                );
+              }
+            } catch {
+              /* ignore */
+            }
+
+            // 지정된 초(1초/2초/3초) 뒤에 자동 일시정지
+            if (pendingPlayRef.current) {
+              if (stopTimerRef.current !== null) {
+                window.clearTimeout(stopTimerRef.current);
+              }
+              stopTimerRef.current = window.setTimeout(() => {
+                try {
+                  event.target?.pauseVideo?.();
+                } catch {
+                  /* ignore */
+                }
+                pendingPlayRef.current = false;
+                setIsPlayingAudio(false);
+              }, clipDurationRef.current * 1000);
+            }
+          } else if (event.data === 3) {
+            // BUFFERING(3): 버퍼링 중에는 1초 타이머를 멈추고 실제 소리가 날 때(1)부터 1초를 잼
+            if (stopTimerRef.current !== null) {
+              window.clearTimeout(stopTimerRef.current);
+              stopTimerRef.current = null;
+            }
+          } else if (event.data === 5) {
+            // video cued(5): 재생 대기 상태가 되면 즉시 재생 시작
+            if (pendingPlayRef.current) {
+              try {
+                event.target?.seekTo?.(startSecRef.current, true);
+                event.target?.playVideo?.();
+              } catch {
+                /* ignore */
+              }
+            }
+          } else if (event.data === 2 || event.data === 0) {
+            // PAUSED(2) or ENDED(0)
+            if (!pendingPlayRef.current) {
+              setIsPlayingAudio(false);
+              setLoadingAudio(false);
+            }
+          }
+        },
+        onError: () => {
+          clearTimers();
+          pendingPlayRef.current = false;
+          setIsPlayingAudio(false);
+          setLoadingAudio(false);
+          setPlayerError(true);
+        }
+      }
+    });
   };
 
   // 새 문제 출제
   const startNewQuestion = (pool: SongItem[], avoidId?: string) => {
-    clearStopTimer();
-    pendingPlayRef.current = false;
-    setIsPlayingAudio(false);
-    setLoadingAudio(false);
+    stopPlayerSafely();
     setPlayerError(false);
 
     if (pool.length === 0) {
@@ -290,6 +500,7 @@ export default function SongQuiz({ agencies, lang, t }: SongQuizProps) {
     const chosen = candidates[Math.floor(Math.random() * candidates.length)];
     const initialStart = pickRandomStart(chosen);
 
+    currentSongRef.current = chosen;
     setCurrentSong(chosen);
     setClipDuration(1);
     setStartSec(initialStart);
@@ -298,146 +509,47 @@ export default function SongQuiz({ agencies, lang, t }: SongQuizProps) {
     setShowUnitHint(false);
     setGuess("");
     setShowSuggestions(false);
-
-    if (playerRef.current && typeof playerRef.current.cueVideoById === "function") {
-      try {
-        playerRef.current.cueVideoById({ videoId: chosen.videoId, startSeconds: initialStart });
-      } catch {
-        /* ignore */
-      }
-    }
   };
 
-  // 필터된 곡 목록이 준비되면 첫 문제 자동 설정
+  // 필터된 곡 목록이 준비되면 첫 문제 자동 설정 (단, 직접 입력한 Custom 문제를 풀고 있을 때는 덮어쓰지 않음)
   useEffect(() => {
     if (loadingCsv) return;
+    if (currentSongRef.current?.id.startsWith("custom-")) return;
     if (filteredSongs.length === 0) {
       setCurrentSong(null);
       return;
     }
-    if (!currentSong || !filteredSongs.some((s) => s.id === currentSong.id)) {
+    if (!currentSongRef.current || !filteredSongs.some((s) => s.id === currentSongRef.current?.id)) {
       startNewQuestion(filteredSongs);
     }
   }, [loadingCsv, filteredSongs]);
 
-  // YouTube IFrame Player 초기화
-  useEffect(() => {
-    let destroyed = false;
-    loadYouTubeApi().then((YT) => {
-      if (destroyed || !playerHostRef.current) return;
-      const el = document.createElement("div");
-      playerHostRef.current.innerHTML = "";
-      playerHostRef.current.appendChild(el);
-
-      playerRef.current = new YT.Player(el, {
-        width: "280",
-        height: "158",
-        videoId: currentSong?.videoId || "",
-        playerVars: {
-          playsinline: 1,
-          controls: 1,
-          rel: 0,
-          modestbranding: 1
-        },
-        events: {
-          onReady: () => {
-            if (destroyed) return;
-            setPlayerReady(true);
-            if (currentSong) {
-              try {
-                playerRef.current.cueVideoById({
-                  videoId: currentSong.videoId,
-                  startSeconds: startSecRef.current
-                });
-              } catch {
-                /* ignore */
-              }
-            }
-          },
-          onStateChange: (event: any) => {
-            if (destroyed) return;
-            // YT.PlayerState.PLAYING === 1
-            if (event.data === 1) {
-              setLoadingAudio(false);
-              setIsPlayingAudio(true);
-              // 문제 풀이 중일 때만 지정된 초(1초/2초/3초) 뒤에 자동 일시정지
-              if (pendingPlayRef.current) {
-                clearStopTimer();
-                stopTimerRef.current = window.setTimeout(() => {
-                  try {
-                    playerRef.current?.pauseVideo();
-                  } catch {
-                    /* ignore */
-                  }
-                  pendingPlayRef.current = false;
-                  setIsPlayingAudio(false);
-                }, clipDurationRef.current * 1000);
-              }
-            } else if (event.data === 2 || event.data === 0) {
-              // PAUSED(2) or ENDED(0)
-              setIsPlayingAudio(false);
-              setLoadingAudio(false);
-            }
-          },
-          onError: () => {
-            if (destroyed) return;
-            clearStopTimer();
-            pendingPlayRef.current = false;
-            setIsPlayingAudio(false);
-            setLoadingAudio(false);
-            setPlayerError(true);
-          }
-        }
-      });
-    });
-
-    return () => {
-      destroyed = true;
-      clearStopTimer();
-      try {
-        playerRef.current?.destroy();
-      } catch {
-        /* ignore */
-      }
-      playerRef.current = null;
-    };
-  }, []);
-
   // 1초(또는 연장된 초) 재생 실행
-  const playSnippet = (overrideSec?: number, overrideStart?: number) => {
-    if (!currentSong || !playerRef.current || !playerReady) return;
-    clearStopTimer();
-    setPlayerError(false);
+  const playSnippet = (overrideSec?: number, overrideStart?: number, overrideSong?: SongItem) => {
+    const targetSong = overrideSong ?? currentSong;
+    if (!targetSong) return;
 
     const dur = overrideSec ?? clipDuration;
-    clipDurationRef.current = dur;
-
     let targetStart = overrideStart ?? startSec;
+
     try {
-      const totalDur = Number(playerRef.current.getDuration?.() || 0);
-      if (overrideStart === undefined && totalDur > 40 && targetStart >= totalDur - 10) {
-        targetStart = pickRandomStart(currentSong, totalDur);
-        setStartSec(targetStart);
+      if (
+        playerRef.current &&
+        playerReadyRef.current &&
+        overrideStart === undefined &&
+        activeVideoIdRef.current === targetSong.videoId
+      ) {
+        const totalDur = Number(playerRef.current.getDuration?.() || 0);
+        if (totalDur > 40 && targetStart >= totalDur - 10) {
+          targetStart = pickRandomStart(targetSong, totalDur);
+          setStartSec(targetStart);
+        }
       }
     } catch {
       /* ignore */
     }
-    startSecRef.current = targetStart;
-    pendingPlayRef.current = true;
-    setLoadingAudio(true);
 
-    try {
-      const loadedId = playerRef.current.getVideoData?.()?.video_id;
-      if (loadedId !== currentSong.videoId) {
-        playerRef.current.loadVideoById({ videoId: currentSong.videoId, startSeconds: targetStart });
-      } else {
-        playerRef.current.seekTo(targetStart, true);
-        playerRef.current.playVideo();
-      }
-    } catch {
-      setLoadingAudio(false);
-      setPlayerError(true);
-    }
+    ensurePlayerAndPlay(targetSong.videoId, targetStart, dur);
   };
 
   // +1초 늘리기 (최대 5초)
@@ -450,7 +562,10 @@ export default function SongQuiz({ agencies, lang, t }: SongQuizProps) {
   // 다른 1초 구간 뽑기
   const rerollSpot = () => {
     if (!currentSong) return;
-    const totalDur = Number(playerRef.current?.getDuration?.() || 0);
+    const totalDur =
+      playerRef.current && playerReadyRef.current && activeVideoIdRef.current === currentSong.videoId
+        ? Number(playerRef.current?.getDuration?.() || 0)
+        : 0;
     const nextStart = pickRandomStart(currentSong, totalDur > 0 ? totalDur : undefined);
     setStartSec(nextStart);
     playSnippet(clipDuration, nextStart);
@@ -467,8 +582,10 @@ export default function SongQuiz({ agencies, lang, t }: SongQuizProps) {
     setShowSuggestions(false);
 
     if (isCorrectGuess(value, currentSong, easyMode)) {
-      clearStopTimer();
+      clearTimers();
       pendingPlayRef.current = false;
+      setIsPlayingAudio(false);
+      setLoadingAudio(false);
       setStatus("correct");
       setStreak((s) => s + 1);
       setCorrectCount((c) => c + 1);
@@ -482,8 +599,10 @@ export default function SongQuiz({ agencies, lang, t }: SongQuizProps) {
   // 포기 / 정답 보기
   const handleGiveUp = () => {
     if (!currentSong || status !== "playing") return;
-    clearStopTimer();
+    clearTimers();
     pendingPlayRef.current = false;
+    setIsPlayingAudio(false);
+    setLoadingAudio(false);
     setStatus("giveup");
     setStreak(0);
     setTotalPlayed((p) => p + 1);
@@ -527,23 +646,27 @@ export default function SongQuiz({ agencies, lang, t }: SongQuizProps) {
     });
   };
 
-  // 커스텀 유튜브 링크로 즉시 테스트 문제 만들기
+  // 커스텀 유튜브 링크로 즉시 테스트 문제 만들고 1초 재생 시작
   const handleCustomUrlStart = () => {
     const vid = extractYouTubeId(customUrl);
-    if (!vid) return;
-    const title = customTitle.trim() || "Custom Song";
+    if (!vid) {
+      alert("올바른 유튜브 또는 유튜브 뮤직 링크를 입력해주세요.");
+      return;
+    }
+    const title = customTitle.trim() || "유튜브 테스트 곡";
     const customSong: SongItem = {
       id: `custom-${Date.now()}`,
-      unit: "Custom",
+      unit: "직접 입력 테스트",
       titleKo: title,
       titleEn: title,
       titleJa: title,
       aliases: [],
       videoId: vid,
       startMin: 15,
-      endMax: 0
+      endMax: 90
     };
     const start = pickRandomStart(customSong);
+    currentSongRef.current = customSong;
     setCurrentSong(customSong);
     setClipDuration(1);
     setStartSec(start);
@@ -552,13 +675,9 @@ export default function SongQuiz({ agencies, lang, t }: SongQuizProps) {
     setShowUnitHint(false);
     setGuess("");
     setPlayerError(false);
-    if (playerRef.current && playerReady) {
-      try {
-        playerRef.current.cueVideoById({ videoId: vid, startSeconds: start });
-      } catch {
-        /* ignore */
-      }
-    }
+
+    quizCardRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
+    ensurePlayerAndPlay(vid, start, 1);
   };
 
   const revealed = status === "correct" || status === "giveup";
@@ -632,171 +751,194 @@ export default function SongQuiz({ agencies, lang, t }: SongQuizProps) {
       </details>
 
       {/* 메인 문제 카드 */}
-      {!currentSong ? (
-        <div className="quiz-card">
+      <div className="quiz-card" ref={quizCardRef}>
+        {!currentSong ? (
           <p className="hint">{t("quizNoSongsInFilter")}</p>
-        </div>
-      ) : (
-        <div className="quiz-card">
-          {/* 오디오 컨트롤 영역 */}
-          <div className="quiz-audio-controls">
-            <button
-              type="button"
-              className="download-btn quiz-play-btn"
-              disabled={!playerReady || loadingAudio}
-              onClick={() => playSnippet()}
-            >
-              {!playerReady || loadingAudio
-                ? t("quizLoadingAudio")
-                : isPlayingAudio
-                ? t("quizPlaying")
-                : t("quizPlayClip", { sec: clipDuration })}
-            </button>
-
-            {status === "playing" && (
-              <div className="quiz-helper-btns">
-                {clipDuration < 5 && (
-                  <button type="button" className="quiz-sub-btn" onClick={extendDuration}>
-                    {t("quizExtendSec", { sec: clipDuration + 1 })}
-                  </button>
-                )}
-                <button type="button" className="quiz-sub-btn" onClick={rerollSpot}>
-                  {t("quizChangeSpot")}
-                </button>
-                {!showUnitHint && (
-                  <button type="button" className="quiz-sub-btn" onClick={() => setShowUnitHint(true)}>
-                    {t("quizShowUnitHint")}
-                  </button>
-                )}
-              </div>
+        ) : (
+          <>
+            {currentSong.id.startsWith("custom-") && (
+              <p className="quiz-hint-banner" style={{ marginBottom: "12px" }}>
+                🔗 직접 입력한 유튜브 링크로 문제 출제 중
+              </p>
             )}
-          </div>
 
-          {showUnitHint && status === "playing" && (
-            <p className="quiz-hint-banner">
-              {t("quizUnitHintText", { unit: unitNameMap[currentSong.unit] || currentSong.unit })}
-            </p>
-          )}
-
-          {playerError && <p className="hint busy-note">{t("quizPlayerError")}</p>}
-
-          {/* 정답 입력 영역 */}
-          {status === "playing" && (
-            <div className="quiz-input-wrap">
-              <div className={`quiz-input-row${wrongShake ? " shake" : ""}`}>
-                <input
-                  type="text"
-                  value={guess}
-                  onChange={(e) => {
-                    setGuess(e.target.value);
-                    setShowSuggestions(true);
-                  }}
-                  onFocus={() => setShowSuggestions(true)}
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter" && !e.nativeEvent.isComposing) {
-                      e.preventDefault();
-                      handleGuessSubmit();
-                    }
-                  }}
-                  placeholder={t("quizInputPlaceholder")}
-                />
-                <button type="button" className="download-btn" onClick={() => handleGuessSubmit()}>
-                  {t("quizSubmitBtn")}
-                </button>
-              </div>
-
-              {/* 초보자 모드 자동완성 후보 */}
-              {easyMode && showSuggestions && suggestions.length > 0 && (
-                <ul className="quiz-suggestions">
-                  {suggestions.map((s) => (
-                    <li key={s.id}>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          const chosenTitle =
-                            lang === "ja"
-                              ? s.titleJa
-                              : lang === "en"
-                              ? s.titleEn
-                              : s.titleKo;
-                          setGuess(chosenTitle);
-                          handleGuessSubmit(chosenTitle);
-                        }}
-                      >
-                        <span className="sug-unit">{unitNameMap[s.unit] || s.unit}</span>
-                        <span className="sug-title">{formatSongDisplay(s)}</span>
-                      </button>
-                    </li>
-                  ))}
-                </ul>
-              )}
-
-              {tries > 0 && <p className="quiz-wrong-msg">{t("quizWrongMsg", { tries })}</p>}
-
-              <div style={{ marginTop: "12px" }}>
-                <button
-                  type="button"
-                  className="quiz-sub-btn giveup"
-                  onClick={handleGiveUp}
-                >
-                  {t("quizGiveUpBtn")}
-                </button>
-              </div>
-            </div>
-          )}
-
-          {/* 정답 공개 / 포기 후 결과 영역 */}
-          {revealed && (
-            <div className={`quiz-result-box ${status}`}>
-              <h3>
-                {status === "correct"
-                  ? t("quizCorrectMsg", { tries })
-                  : t("quizGiveUpMsg")}
-              </h3>
-              <p className="quiz-answer-meta">
-                <b>{t("quizAnswerUnit")}:</b> {unitNameMap[currentSong.unit] || currentSong.unit}
-              </p>
-              <p className="quiz-answer-meta">
-                <b>{t("quizAnswerTitles")}:</b>{" "}
-                {Array.from(
-                  new Set([currentSong.titleKo, currentSong.titleEn, currentSong.titleJa].filter(Boolean))
-                ).join(" / ")}
-              </p>
+            {/* 오디오 컨트롤 영역 (초기 화면에서 '음원 준비 중...'에 절대 갇히지 않도록 항상 클릭 허용) */}
+            <div className="quiz-audio-controls">
               <button
                 type="button"
-                className="download-btn"
-                style={{ backgroundColor: "#20c997", marginTop: "10px" }}
-                onClick={() => startNewQuestion(filteredSongs, currentSong.id)}
+                className="download-btn quiz-play-btn"
+                disabled={loadingAudio}
+                onClick={() => playSnippet()}
               >
-                {t("quizNextBtn")}
+                {loadingAudio
+                  ? t("quizLoadingAudio")
+                  : isPlayingAudio
+                  ? t("quizPlaying")
+                  : t("quizPlayClip", { sec: clipDuration })}
               </button>
-            </div>
-          )}
 
-          {/* 유튜브 플레이어: 문제 풀이 중에는 1x1 투명 상태로 숨기고, 정답/포기 후에는 영상을 보여줌 */}
-          <div className={revealed ? "quiz-player-visible" : "quiz-player-hidden"}>
-            <div ref={playerHostRef} />
-          </div>
+              {status === "playing" && (
+                <div className="quiz-helper-btns">
+                  {clipDuration < 5 && (
+                    <button type="button" className="quiz-sub-btn" onClick={extendDuration}>
+                      {t("quizExtendSec", { sec: clipDuration + 1 })}
+                    </button>
+                  )}
+                  <button type="button" className="quiz-sub-btn" onClick={rerollSpot}>
+                    {t("quizChangeSpot")}
+                  </button>
+                  {!showUnitHint && (
+                    <button type="button" className="quiz-sub-btn" onClick={() => setShowUnitHint(true)}>
+                      {t("quizShowUnitHint")}
+                    </button>
+                  )}
+                </div>
+              )}
+            </div>
+
+            {showUnitHint && status === "playing" && (
+              <p className="quiz-hint-banner">
+                {t("quizUnitHintText", { unit: unitNameMap[currentSong.unit] || currentSong.unit })}
+              </p>
+            )}
+
+            {playerError && <p className="hint busy-note">{t("quizPlayerError")}</p>}
+
+            {/* 정답 입력 영역 */}
+            {status === "playing" && (
+              <div className="quiz-input-wrap">
+                <div className={`quiz-input-row${wrongShake ? " shake" : ""}`}>
+                  <input
+                    type="text"
+                    value={guess}
+                    onChange={(e) => {
+                      setGuess(e.target.value);
+                      setShowSuggestions(true);
+                    }}
+                    onFocus={() => setShowSuggestions(true)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter" && !e.nativeEvent.isComposing) {
+                        e.preventDefault();
+                        handleGuessSubmit();
+                      }
+                    }}
+                    placeholder={t("quizInputPlaceholder")}
+                  />
+                  <button type="button" className="download-btn" onClick={() => handleGuessSubmit()}>
+                    {t("quizSubmitBtn")}
+                  </button>
+                </div>
+
+                {/* 초보자 모드 자동완성 후보 */}
+                {easyMode && showSuggestions && suggestions.length > 0 && (
+                  <ul className="quiz-suggestions">
+                    {suggestions.map((s) => (
+                      <li key={s.id}>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const chosenTitle =
+                              lang === "ja"
+                                ? s.titleJa
+                                : lang === "en"
+                                ? s.titleEn
+                                : s.titleKo;
+                            setGuess(chosenTitle);
+                            handleGuessSubmit(chosenTitle);
+                          }}
+                        >
+                          <span className="sug-unit">{unitNameMap[s.unit] || s.unit}</span>
+                          <span className="sug-title">{formatSongDisplay(s)}</span>
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+
+                {tries > 0 && <p className="quiz-wrong-msg">{t("quizWrongMsg", { tries })}</p>}
+
+                <div style={{ marginTop: "12px" }}>
+                  <button
+                    type="button"
+                    className="quiz-sub-btn giveup"
+                    onClick={handleGiveUp}
+                  >
+                    {t("quizGiveUpBtn")}
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {/* 정답 공개 / 포기 후 결과 영역 */}
+            {revealed && (
+              <div className={`quiz-result-box ${status}`}>
+                <h3>
+                  {status === "correct"
+                    ? t("quizCorrectMsg", { tries })
+                    : t("quizGiveUpMsg")}
+                </h3>
+                <p className="quiz-answer-meta">
+                  <b>{t("quizAnswerUnit")}:</b> {unitNameMap[currentSong.unit] || currentSong.unit}
+                </p>
+                <p className="quiz-answer-meta">
+                  <b>{t("quizAnswerTitles")}:</b>{" "}
+                  {Array.from(
+                    new Set([currentSong.titleKo, currentSong.titleEn, currentSong.titleJa].filter(Boolean))
+                  ).join(" / ")}
+                </p>
+                <button
+                  type="button"
+                  className="download-btn"
+                  style={{ backgroundColor: "#20c997", marginTop: "10px" }}
+                  onClick={() => startNewQuestion(filteredSongs, currentSong.id)}
+                >
+                  {t("quizNextBtn")}
+                </button>
+              </div>
+            )}
+          </>
+        )}
+
+        {/* 유튜브 플레이어 호스트: 화면 안에 정상 크기로 두되 문제 풀이 중에는 가림막으로 덮어 브라우저 차단 방지 */}
+        <div className={revealed ? "quiz-player-visible" : "quiz-player-hidden"}>
+          <div ref={playerHostRef} />
         </div>
-      )}
+      </div>
 
       {/* 직접 유튜브 링크를 넣어 테스트해볼 수 있는 패널 */}
-      <details className="quiz-custom-url">
+      <details className="quiz-custom-url" open>
         <summary>{t("quizCustomUrlToggle")}</summary>
         <div className="quiz-custom-form">
           <input
             type="text"
             value={customUrl}
             onChange={(e) => setCustomUrl(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" && !e.nativeEvent.isComposing) {
+                e.preventDefault();
+                handleCustomUrlStart();
+              }
+            }}
             placeholder={t("quizCustomUrlPlaceholder")}
           />
           <input
             type="text"
             value={customTitle}
             onChange={(e) => setCustomTitle(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" && !e.nativeEvent.isComposing) {
+                e.preventDefault();
+                handleCustomUrlStart();
+              }
+            }}
             placeholder={t("quizCustomTitlePlaceholder")}
           />
-          <button type="button" className="quiz-sub-btn" onClick={handleCustomUrlStart}>
+          <button
+            type="button"
+            className="download-btn"
+            style={{ padding: "8px 14px", fontSize: "0.85rem" }}
+            onClick={handleCustomUrlStart}
+          >
             {t("quizCustomStartBtn")}
           </button>
         </div>
