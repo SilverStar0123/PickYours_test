@@ -3,9 +3,12 @@ import type { Lang, MsgKey } from "./i18n";
 import type { Agency } from "./types";
 import { loadCsv, stripQuotes } from "./utils";
 
+export const SHUFFLE_UNIT_ID = "__shuffle__";
+
 export interface SongItem {
   id: string;
-  unit: string; // 한국어 기준 유닛 id (예: 'Trickstar', '유성대')
+  unit: string; // 필터 기준 유닛 id (셔플 유닛 곡들은 모두 '__shuffle__'로 통합)
+  rawUnit: string; // songs.csv에 적힌 원래 유닛명 (예: 'Ring.A.Bell', 'MODE/D')
   titleKo: string;
   titleEn: string;
   titleJa: string;
@@ -13,6 +16,12 @@ export interface SongItem {
   videoId: string;
   startMin: number;
   endMax: number;
+}
+
+interface HistoryItem {
+  song: SongItem;
+  correct: boolean;
+  tries: number;
 }
 
 interface SongQuizProps {
@@ -40,31 +49,20 @@ export function extractYouTubeId(input: string): string | null {
   return m ? m[1] : null;
 }
 
-// 초보자 모드용 정규화: 소문자 + 전각→반각(NFKC) + 모든 띄어쓰기 및 특수부호(', !, ☆, *, :, - 등) 제거
-export function normalizeEasy(str: string): string {
+// 대소문자·띄어쓰기·특수기호(', !, ☆, *, →, :, - 등) 보정 정규화 (초보자 모드 및 하드 모드 공통 사용)
+export function normalizeAnswer(str: string): string {
   return str
     .normalize("NFKC")
     .toLowerCase()
-    // 한글, 영문, 숫자, 일본어(히라가나·카타카나·한자)만 남기고 모든 공백/기호 제거
+    // 한글, 영문, 숫자, 일본어(히라가나·카타카나·한자)만 남기고 모든 공백/특수부호 제거
     .replace(/[^a-z0-9가-힣ㄱ-ㅎㅏ-ㅣ\u3040-\u30ff\u3400-\u4dbf\u4e00-\u9fff]/g, "");
 }
 
-// 일반(정확) 모드용 정규화: 앞뒤 공백 정리 + 연속 공백 1칸으로 + 대소문자 무시 + 아포스트로피 종류만 통일
-export function normalizeStrict(str: string): string {
-  return str
-    .normalize("NFKC")
-    .toLowerCase()
-    .replace(/[’‘`]/g, "'")
-    .replace(/\s+/g, " ")
-    .trim();
-}
-
-// 한 곡에서 인정되는 모든 정답 문자열 목록 (한/영/일 제목 + 별칭 + 초보자 모드일 경우 괄호 부제 제거본 포함)
-function getAcceptedAnswers(song: SongItem, includeParenStripped: boolean): string[] {
+// 한 곡에서 인정되는 모든 정답 문자열 목록 (비어있는 언어 칸은 자동 제외 + 괄호 부제 제거본 포함)
+function getAcceptedAnswers(song: SongItem): string[] {
   const base = [song.titleKo, song.titleEn, song.titleJa, ...song.aliases]
     .map((x) => x.trim())
     .filter(Boolean);
-  if (!includeParenStripped) return base;
   const extra: string[] = [];
   base.forEach((title) => {
     const stripped = title.replace(/\s*[\(（\[【].*?[\)）\]】]\s*/g, "").trim();
@@ -75,22 +73,26 @@ function getAcceptedAnswers(song: SongItem, includeParenStripped: boolean): stri
   return Array.from(new Set([...base, ...extra]));
 }
 
-export function isCorrectGuess(guess: string, song: SongItem, easyMode: boolean): boolean {
-  const raw = guess.trim();
-  if (!raw) return false;
-  const candidates = getAcceptedAnswers(song, easyMode);
-  if (easyMode) {
-    const g = normalizeEasy(raw);
-    if (!g) return false;
-    return candidates.some((c) => normalizeEasy(c) === g);
-  } else {
-    const g = normalizeStrict(raw);
-    if (!g) return false;
-    return candidates.some((c) => normalizeStrict(c) === g);
-  }
+export function isCorrectGuess(guess: string, song: SongItem): boolean {
+  const g = normalizeAnswer(guess);
+  if (!g) return false;
+  const candidates = getAcceptedAnswers(song);
+  return candidates.some((c) => normalizeAnswer(c) === g);
 }
 
-// YouTube IFrame API 스크립트를 로드하고 YT.Player 객체를 반환 (콜백 누락 대비 폴링 병행)
+// 배열 무작위 섞기 (Fisher-Yates)
+function shuffleArray<T>(arr: T[]): T[] {
+  const copy = [...arr];
+  for (let i = copy.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    const tmp = copy[i];
+    copy[i] = copy[j];
+    copy[j] = tmp;
+  }
+  return copy;
+}
+
+// YouTube IFrame API 스크립트를 로드하고 YT.Player 객체를 반환
 let ytApiPromise: Promise<any> | null = null;
 function loadYouTubeApi(): Promise<any> {
   if (typeof window !== "undefined" && (window as any).YT && (window as any).YT.Player) {
@@ -131,13 +133,25 @@ export default function SongQuiz({ agencies, lang, t }: SongQuizProps) {
   const [songs, setSongs] = useState<SongItem[]>([]);
   const [loadingCsv, setLoadingCsv] = useState(true);
 
-  // 초보자 모드 (띄어쓰기/특수부호 무시 + 자동완성 보기)
+  // 진행 단계: "setup" (설정 화면) | "playing" (문제 풀이) | "summary" (최종 결과/정답률)
+  const [phase, setPhase] = useState<"setup" | "playing" | "summary">("setup");
+
+  // 난이도: true = 초보자 모드(자동완성 후보 표시), false = 하드 모드(직접 입력 + 부호/대소문자 보정)
   const [easyMode, setEasyMode] = useState<boolean>(true);
 
-  // 선택된 유닛 필터 (기본: 16개 정규 유닛 + songs.csv에 추가된 특별 카테고리 자동 포함)
+  // 문제 수 설정: 5, 10, 30, 또는 "custom"
+  const [countPreset, setCountPreset] = useState<5 | 10 | 30 | "custom">(10);
+  const [customCountInput, setCustomCountInput] = useState<string>("15");
+
+  // 선택된 유닛 필터 (16개 정규 유닛 + '셔플곡' + songs.csv 내 추가 카테고리)
   const allUnits = useMemo(() => {
     const base = agencies.flatMap((a) => a.groups.map((g) => ({ id: g.id, name: g.name })));
     const seen = new Set(base.map((u) => u.id));
+    // 셔플곡이 1곡이라도 있으면 '셔플곡' 필터 버튼 추가
+    if (songs.some((s) => s.unit === SHUFFLE_UNIT_ID)) {
+      seen.add(SHUFFLE_UNIT_ID);
+      base.push({ id: SHUFFLE_UNIT_ID, name: t("quizShuffleUnit") });
+    }
     songs.forEach((s) => {
       if (s.unit && !seen.has(s.unit)) {
         seen.add(s.unit);
@@ -145,15 +159,16 @@ export default function SongQuiz({ agencies, lang, t }: SongQuizProps) {
       }
     });
     return base;
-  }, [agencies, songs]);
+  }, [agencies, songs, t]);
 
   const unitNameMap = useMemo(() => {
     const m: Record<string, string> = {};
     allUnits.forEach((g) => {
       m[g.id] = g.name;
     });
+    m[SHUFFLE_UNIT_ID] = t("quizShuffleUnit");
     return m;
-  }, [allUnits]);
+  }, [allUnits, t]);
 
   const [selectedUnits, setSelectedUnits] = useState<Set<string>>(() => new Set());
   const knownUnitsRef = useRef<Set<string>>(new Set());
@@ -175,12 +190,17 @@ export default function SongQuiz({ agencies, lang, t }: SongQuizProps) {
     }
   }, [allUnits]);
 
+  // 현재 라운드 출제 큐 및 기록
+  const [questionQueue, setQuestionQueue] = useState<SongItem[]>([]);
+  const [questionIdx, setQuestionIdx] = useState<number>(0);
+  const [history, setHistory] = useState<HistoryItem[]>([]);
+
   // 현재 문제 상태
   const [currentSong, setCurrentSong] = useState<SongItem | null>(null);
   const currentSongRef = useRef<SongItem | null>(null);
   currentSongRef.current = currentSong;
 
-  const [clipDuration, setClipDuration] = useState<number>(1); // 1초 → 2초 → 3초
+  const [clipDuration, setClipDuration] = useState<number>(1);
   const [startSec, setStartSec] = useState<number>(20);
   const [tries, setTries] = useState<number>(0);
   const [status, setStatus] = useState<"playing" | "correct" | "giveup">("playing");
@@ -188,11 +208,6 @@ export default function SongQuiz({ agencies, lang, t }: SongQuizProps) {
   const [showUnitHint, setShowUnitHint] = useState(false);
   const [guess, setGuess] = useState("");
   const [showSuggestions, setShowSuggestions] = useState(false);
-
-  // 점수 기록
-  const [streak, setStreak] = useState(0);
-  const [correctCount, setCorrectCount] = useState(0);
-  const [totalPlayed, setTotalPlayed] = useState(0);
 
   // 플레이어 상태
   const playerRef = useRef<any>(null);
@@ -216,35 +231,68 @@ export default function SongQuiz({ agencies, lang, t }: SongQuizProps) {
   const [customUrl, setCustomUrl] = useState("");
   const [customTitle, setCustomTitle] = useState("");
 
-  // songs.csv 불러오기
+  // ES_list.csv (shuffle1, shuffle2, best_shuffle 추출용) + songs.csv 함께 불러오기
   useEffect(() => {
     let cancelled = false;
     (async () => {
       try {
-        const rows = await loadCsv("songs.csv");
+        const [esRows, songRows] = await Promise.all([
+          loadCsv("ES_list.csv").catch(() => [] as Record<string, string>[]),
+          loadCsv("songs.csv")
+        ]);
         if (cancelled) return;
+
+        // 1) ES_list.csv의 shuffle1, shuffle2, best_shuffle 열에 적힌 모든 셔플 유닛명 수집
+        const shuffleNames = new Set<string>();
+        esRows.forEach((r) => {
+          ["shuffle1", "shuffle2", "best_shuffle", "shffle"].forEach((col) => {
+            const val = stripQuotes(r[col] || "");
+            if (val) {
+              val
+                .split(/[|,]/)
+                .map((s) => s.trim().toLowerCase())
+                .filter(Boolean)
+                .forEach((name) => shuffleNames.add(name));
+            }
+          });
+        });
+
+        // 2) songs.csv 파싱 (영어명 등 일부 언어 제목이 비어 있어도 있는 제목으로 자동 보완)
         const parsed: SongItem[] = [];
-        rows.forEach((r, idx) => {
+        songRows.forEach((r, idx) => {
           const rawUrl = stripQuotes(r.youtube || r.url || r.video || "");
           const videoId = extractYouTubeId(rawUrl);
           if (!videoId) return;
-          const unit = stripQuotes(r.unit || "");
-          const titleKo = stripQuotes(r.title_ko || r.title || "");
-          const titleEn = stripQuotes(r.title_en || "");
-          const titleJa = stripQuotes(r.title_ja || "");
-          if (!titleKo && !titleEn && !titleJa) return;
+
+          const rawUnit = stripQuotes(r.unit || "") || "기타";
+          const isShuffle =
+            shuffleNames.has(rawUnit.toLowerCase()) ||
+            rawUnit === "셔플곡" ||
+            rawUnit === "셔플 유닛" ||
+            rawUnit.toLowerCase() === "shuffle";
+          const unit = isShuffle ? SHUFFLE_UNIT_ID : rawUnit;
+
+          const tKo = stripQuotes(r.title_ko || r.title || "");
+          const tEn = stripQuotes(r.title_en || "");
+          const tJa = stripQuotes(r.title_ja || "");
+          const fallbackTitle = tKo || tEn || tJa;
+          if (!fallbackTitle) return;
+
           const aliases = stripQuotes(r.aliases || "")
             .split(/[|,]/)
             .map((s) => s.trim())
             .filter(Boolean);
           const startMin = Math.max(0, Number(stripQuotes(r.start_min || "")) || 15);
           const endMax = Math.max(0, Number(stripQuotes(r.end_max || "")) || 0);
+
           parsed.push({
             id: `song-${idx}-${videoId}`,
-            unit: unit || "기타",
-            titleKo: titleKo || titleEn || titleJa,
-            titleEn: titleEn || titleKo || titleJa,
-            titleJa: titleJa || titleEn || titleKo,
+            unit,
+            rawUnit,
+            // 비어 있는 언어 칸은 다른 언어 제목으로 채워 두어 어느 언어 화면에서도 빈칸이 뜨지 않게 함
+            titleKo: tKo || fallbackTitle,
+            titleEn: tEn || fallbackTitle,
+            titleJa: tJa || fallbackTitle,
             aliases,
             videoId,
             startMin,
@@ -277,6 +325,14 @@ export default function SongQuiz({ agencies, lang, t }: SongQuizProps) {
     () => songs.filter((s) => selectedUnits.has(s.unit)),
     [songs, selectedUnits]
   );
+
+  // 설정된 목표 문제 수 계산
+  const targetQuestionCount = useMemo(() => {
+    if (countPreset !== "custom") return countPreset;
+    const n = parseInt(customCountInput, 10);
+    if (Number.isNaN(n) || n < 1) return 1;
+    return Math.min(100, n);
+  }, [countPreset, customCountInput]);
 
   // 무작위 시작 위치(초) 뽑기
   const pickRandomStart = (song: SongItem, durationSec?: number) => {
@@ -327,7 +383,7 @@ export default function SongQuiz({ agencies, lang, t }: SongQuizProps) {
     };
   }, []);
 
-  // 플레이어를 생성하거나(첫 실행 시 반드시 유효한 videoId와 함께 생성!) 이미 생성되어 있으면 해당 영상을 재생
+  // 플레이어를 생성하거나(첫 실행 시 유효한 videoId와 함께 생성) 이미 생성되어 있으면 해당 영상을 재생
   const ensurePlayerAndPlay = async (videoId: string, targetStart: number, durSec: number) => {
     clearTimers();
     setPlayerError(false);
@@ -336,7 +392,6 @@ export default function SongQuiz({ agencies, lang, t }: SongQuizProps) {
     pendingPlayRef.current = true;
     setLoadingAudio(true);
 
-    // 6초 안에 재생이 시작되지 않으면 '음원 준비 중...' 잠금을 자동으로 풀어 먹통 방지
     loadWatchdogRef.current = window.setTimeout(() => {
       setLoadingAudio(false);
     }, 6000);
@@ -347,7 +402,6 @@ export default function SongQuiz({ agencies, lang, t }: SongQuizProps) {
       return;
     }
 
-    // 이미 플레이어가 준비되어 있으면 바로 loadVideoById 또는 seekTo로 재생
     if (playerRef.current && playerReadyRef.current) {
       try {
         if (activeVideoIdRef.current !== videoId) {
@@ -362,7 +416,6 @@ export default function SongQuiz({ agencies, lang, t }: SongQuizProps) {
         }
         return;
       } catch {
-        // 기존 플레이어 호출 실패 시 아래에서 새로 생성
         try {
           playerRef.current.destroy?.();
         } catch {
@@ -373,7 +426,6 @@ export default function SongQuiz({ agencies, lang, t }: SongQuizProps) {
       }
     }
 
-    // 플레이어를 유효한 videoId와 함께 새로 생성 (빈 videoId로 생성하면 onReady가 안 불리므로 반드시 videoId 전달!)
     const el = document.createElement("div");
     playerHostRef.current.innerHTML = "";
     playerHostRef.current.appendChild(el);
@@ -403,7 +455,6 @@ export default function SongQuiz({ agencies, lang, t }: SongQuizProps) {
           }
         },
         onStateChange: (event: any) => {
-          // YT.PlayerState.PLAYING === 1
           if (event.data === 1) {
             if (loadWatchdogRef.current !== null) {
               window.clearTimeout(loadWatchdogRef.current);
@@ -413,7 +464,6 @@ export default function SongQuiz({ agencies, lang, t }: SongQuizProps) {
             setIsPlayingAudio(true);
             setPlayerError(false);
 
-            // 커스텀 링크 테스트 시 정답 제목을 안 적었다면 유튜브 실제 영상 제목으로 자동 채움
             try {
               const fetchedTitle = event.target?.getVideoData?.()?.title;
               if (
@@ -437,7 +487,6 @@ export default function SongQuiz({ agencies, lang, t }: SongQuizProps) {
               /* ignore */
             }
 
-            // 지정된 초(1초/2초/3초) 뒤에 자동 일시정지
             if (pendingPlayRef.current) {
               if (stopTimerRef.current !== null) {
                 window.clearTimeout(stopTimerRef.current);
@@ -453,13 +502,11 @@ export default function SongQuiz({ agencies, lang, t }: SongQuizProps) {
               }, clipDurationRef.current * 1000);
             }
           } else if (event.data === 3) {
-            // BUFFERING(3): 버퍼링 중에는 1초 타이머를 멈추고 실제 소리가 날 때(1)부터 1초를 잼
             if (stopTimerRef.current !== null) {
               window.clearTimeout(stopTimerRef.current);
               stopTimerRef.current = null;
             }
           } else if (event.data === 5) {
-            // video cued(5): 재생 대기 상태가 되면 즉시 재생 시작
             if (pendingPlayRef.current) {
               try {
                 event.target?.seekTo?.(startSecRef.current, true);
@@ -469,7 +516,6 @@ export default function SongQuiz({ agencies, lang, t }: SongQuizProps) {
               }
             }
           } else if (event.data === 2 || event.data === 0) {
-            // PAUSED(2) or ENDED(0)
             if (!pendingPlayRef.current) {
               setIsPlayingAudio(false);
               setLoadingAudio(false);
@@ -487,21 +533,13 @@ export default function SongQuiz({ agencies, lang, t }: SongQuizProps) {
     });
   };
 
-  // 새 문제 출제
-  const startNewQuestion = (pool: SongItem[], avoidId?: string) => {
+  // 특정 문제 객체로 화면 상태 세팅
+  const loadQuestionItem = (song: SongItem) => {
     stopPlayerSafely();
     setPlayerError(false);
-
-    if (pool.length === 0) {
-      setCurrentSong(null);
-      return;
-    }
-    const candidates = pool.length > 1 && avoidId ? pool.filter((s) => s.id !== avoidId) : pool;
-    const chosen = candidates[Math.floor(Math.random() * candidates.length)];
-    const initialStart = pickRandomStart(chosen);
-
-    currentSongRef.current = chosen;
-    setCurrentSong(chosen);
+    const initialStart = pickRandomStart(song);
+    currentSongRef.current = song;
+    setCurrentSong(song);
     setClipDuration(1);
     setStartSec(initialStart);
     setTries(0);
@@ -511,18 +549,42 @@ export default function SongQuiz({ agencies, lang, t }: SongQuizProps) {
     setShowSuggestions(false);
   };
 
-  // 필터된 곡 목록이 준비되면 첫 문제 자동 설정 (단, 직접 입력한 Custom 문제를 풀고 있을 때는 덮어쓰지 않음)
-  useEffect(() => {
-    if (loadingCsv) return;
-    if (currentSongRef.current?.id.startsWith("custom-")) return;
+  // 설정 화면에서 '퀴즈 시작하기' 클릭 시 문제 큐 생성 및 시작
+  const handleStartQuiz = () => {
     if (filteredSongs.length === 0) {
-      setCurrentSong(null);
+      alert(t("quizNoSongsInFilter"));
       return;
     }
-    if (!currentSongRef.current || !filteredSongs.some((s) => s.id === currentSongRef.current?.id)) {
-      startNewQuestion(filteredSongs);
+    const count = targetQuestionCount;
+    const queue: SongItem[] = [];
+    while (queue.length < count) {
+      const batch = shuffleArray(filteredSongs);
+      // 경계에서 같은 곡이 연속으로 나오지 않게 조정
+      if (queue.length > 0 && batch.length > 1 && batch[0].id === queue[queue.length - 1].id) {
+        const first = batch.shift()!;
+        batch.push(first);
+      }
+      queue.push(...batch);
     }
-  }, [loadingCsv, filteredSongs]);
+    const finalQueue = queue.slice(0, count);
+    setQuestionQueue(finalQueue);
+    setQuestionIdx(0);
+    setHistory([]);
+    setPhase("playing");
+    loadQuestionItem(finalQueue[0]);
+  };
+
+  // 다음 문제로 이동 또는 결과 화면으로 이동
+  const handleNextOrFinish = () => {
+    const nextIdx = questionIdx + 1;
+    if (nextIdx >= questionQueue.length) {
+      stopPlayerSafely();
+      setPhase("summary");
+    } else {
+      setQuestionIdx(nextIdx);
+      loadQuestionItem(questionQueue[nextIdx]);
+    }
+  };
 
   // 1초(또는 연장된 초) 재생 실행
   const playSnippet = (overrideSec?: number, overrideStart?: number, overrideSong?: SongItem) => {
@@ -581,15 +643,13 @@ export default function SongQuiz({ agencies, lang, t }: SongQuizProps) {
     setTries(nextTries);
     setShowSuggestions(false);
 
-    if (isCorrectGuess(value, currentSong, easyMode)) {
+    if (isCorrectGuess(value, currentSong)) {
       clearTimers();
       pendingPlayRef.current = false;
       setIsPlayingAudio(false);
       setLoadingAudio(false);
       setStatus("correct");
-      setStreak((s) => s + 1);
-      setCorrectCount((c) => c + 1);
-      setTotalPlayed((p) => p + 1);
+      setHistory((prev) => [...prev, { song: currentSong, correct: true, tries: nextTries }]);
     } else {
       setWrongShake(true);
       window.setTimeout(() => setWrongShake(false), 400);
@@ -604,25 +664,24 @@ export default function SongQuiz({ agencies, lang, t }: SongQuizProps) {
     setIsPlayingAudio(false);
     setLoadingAudio(false);
     setStatus("giveup");
-    setStreak(0);
-    setTotalPlayed((p) => p + 1);
+    setHistory((prev) => [...prev, { song: currentSong, correct: false, tries }]);
   };
 
-  // 초보자 모드용 자동완성 후보 목록 (선택된 유닛의 곡들 중에서 검색)
+  // 초보자 모드용 자동완성 후보 목록 (선택된 유닛의 곡들 중에서 중복 곡 없이 검색)
   const suggestions = useMemo(() => {
     if (!easyMode || status !== "playing") return [];
-    const q = normalizeEasy(guess);
+    const q = normalizeAnswer(guess);
     if (!q) return [];
     const pool = filteredSongs.length > 0 ? filteredSongs : songs;
     return pool
       .filter((s) => {
-        const all = getAcceptedAnswers(s, true);
-        return all.some((ans) => normalizeEasy(ans).includes(q));
+        const all = getAcceptedAnswers(s);
+        return all.some((ans) => normalizeAnswer(ans).includes(q));
       })
       .slice(0, 7);
   }, [easyMode, status, guess, filteredSongs, songs]);
 
-  // 현재 언어에 맞는 대표 곡 제목 표시
+  // 현재 언어에 맞는 대표 곡 제목 표시 (중복 없는 다른 언어 제목 병기)
   const formatSongDisplay = (s: SongItem): string => {
     const primary =
       lang === "ja"
@@ -636,6 +695,15 @@ export default function SongQuiz({ agencies, lang, t }: SongQuizProps) {
     return others.length > 0 ? `${primary} (${others.join(" / ")})` : primary;
   };
 
+  // 정답 공개 및 결과 화면에서 유닛 이름 표시 (셔플곡이면 '셔플곡 (Ring.A.Bell)' 형태로 원래 유닛명 병기)
+  const formatFullUnitLabel = (s: SongItem): string => {
+    const baseLabel = unitNameMap[s.unit] || s.unit;
+    if (s.unit === SHUFFLE_UNIT_ID && s.rawUnit && s.rawUnit !== "셔플곡" && s.rawUnit !== "셔플 유닛") {
+      return `${baseLabel} (${s.rawUnit})`;
+    }
+    return baseLabel;
+  };
+
   // 유닛 토글
   const toggleUnit = (unitId: string) => {
     setSelectedUnits((prev) => {
@@ -646,7 +714,7 @@ export default function SongQuiz({ agencies, lang, t }: SongQuizProps) {
     });
   };
 
-  // 커스텀 유튜브 링크로 즉시 테스트 문제 만들고 1초 재생 시작
+  // 커스텀 유튜브 링크로 1문제 즉시 테스트
   const handleCustomUrlStart = () => {
     const vid = extractYouTubeId(customUrl);
     if (!vid) {
@@ -657,6 +725,7 @@ export default function SongQuiz({ agencies, lang, t }: SongQuizProps) {
     const customSong: SongItem = {
       id: `custom-${Date.now()}`,
       unit: "직접 입력 테스트",
+      rawUnit: "직접 입력 테스트",
       titleKo: title,
       titleEn: title,
       titleJa: title,
@@ -666,6 +735,10 @@ export default function SongQuiz({ agencies, lang, t }: SongQuizProps) {
       endMax: 90
     };
     const start = pickRandomStart(customSong);
+    setQuestionQueue([customSong]);
+    setQuestionIdx(0);
+    setHistory([]);
+    setPhase("playing");
     currentSongRef.current = customSong;
     setCurrentSong(customSong);
     setClipDuration(1);
@@ -676,237 +749,380 @@ export default function SongQuiz({ agencies, lang, t }: SongQuizProps) {
     setGuess("");
     setPlayerError(false);
 
-    quizCardRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
-    ensurePlayerAndPlay(vid, start, 1);
+    window.setTimeout(() => {
+      quizCardRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
+      ensurePlayerAndPlay(vid, start, 1);
+    }, 50);
   };
 
-  const revealed = status === "correct" || status === "giveup";
+  const revealed = phase === "playing" && (status === "correct" || status === "giveup");
+  const correctTotal = useMemo(() => history.filter((h) => h.correct).length, [history]);
+  const accuracyPercent =
+    questionQueue.length > 0 ? Math.round((correctTotal / questionQueue.length) * 100) : 0;
+
+  if (loadingCsv) {
+    return <div className="quiz-container notice-page">{t("loadingData")}</div>;
+  }
 
   return (
     <div className="quiz-container">
       <h1>{t("quizTitle")}</h1>
       <p className="subtitle">{t("quizSubtitle")}</p>
 
-      {/* 초보자 모드 스위치 + 점수판 */}
-      <div className="quiz-top-bar">
-        <label className="switch">
-          <input
-            type="checkbox"
-            role="switch"
-            checked={easyMode}
-            onChange={(e) => setEasyMode(e.target.checked)}
-          />
-          <span className="switch-track" aria-hidden="true">
-            <span className="switch-thumb" />
-          </span>
-          <span>{t("quizEasyMode")}</span>
-        </label>
-        <div className="quiz-score-badges">
-          <span className="quiz-badge streak">{t("quizScoreStreak", { streak })}</span>
-          <span className="quiz-badge">{t("quizScoreTotal", { correct: correctCount, total: totalPlayed })}</span>
-        </div>
-      </div>
-      <p className="hint" style={{ marginTop: "-4px", marginBottom: "14px" }}>
-        {easyMode ? t("quizEasyHint") : t("quizHardHint")}
-      </p>
-
-      {/* 특정 유닛 선택 필터 */}
-      <details className="quiz-unit-filter">
-        <summary>
-          {t("quizUnitFilterTitle", {
-            selected: selectedUnits.size,
-            total: allUnits.length,
-            songs: filteredSongs.length
-          })}
-        </summary>
-        <div className="quiz-unit-actions">
-          <button
-            type="button"
-            className="ghost-sm"
-            onClick={() => setSelectedUnits(new Set(allUnits.map((u) => u.id)))}
-          >
-            {t("quizSelectAllUnits")}
-          </button>
-          <button type="button" className="ghost-sm" onClick={() => setSelectedUnits(new Set())}>
-            {t("quizClearUnits")}
-          </button>
-        </div>
-        <div className="quiz-unit-chips">
-          {allUnits.map((u) => {
-            const active = selectedUnits.has(u.id);
-            const cnt = songCountByUnit[u.id] || 0;
-            return (
-              <button
-                key={u.id}
-                type="button"
-                className={`quiz-unit-chip${active ? " active" : ""}`}
-                aria-pressed={active}
-                onClick={() => toggleUnit(u.id)}
-              >
-                {u.name} <span className="chip-count">({cnt})</span>
-              </button>
-            );
-          })}
-        </div>
-      </details>
-
-      {/* 메인 문제 카드 */}
-      <div className="quiz-card" ref={quizCardRef}>
-        {!currentSong ? (
-          <p className="hint">{t("quizNoSongsInFilter")}</p>
-        ) : (
-          <>
-            {currentSong.id.startsWith("custom-") && (
-              <p className="quiz-hint-banner" style={{ marginBottom: "12px" }}>
-                🔗 직접 입력한 유튜브 링크로 문제 출제 중
-              </p>
-            )}
-
-            {/* 오디오 컨트롤 영역 (초기 화면에서 '음원 준비 중...'에 절대 갇히지 않도록 항상 클릭 허용) */}
-            <div className="quiz-audio-controls">
+      {/* ────────────────── 1. 시작 전 설정 화면 (Setup) ────────────────── */}
+      {phase === "setup" && (
+        <div className="quiz-card quiz-setup-card">
+          {/* (1) 난이도 선택 */}
+          <div className="quiz-setup-section">
+            <h3 className="quiz-setup-heading">{t("quizSetupModeTitle")}</h3>
+            <div className="quiz-option-row">
               <button
                 type="button"
-                className="download-btn quiz-play-btn"
-                disabled={loadingAudio}
-                onClick={() => playSnippet()}
+                className={`quiz-opt-btn${easyMode ? " active" : ""}`}
+                aria-pressed={easyMode}
+                onClick={() => setEasyMode(true)}
               >
-                {loadingAudio
-                  ? t("quizLoadingAudio")
-                  : isPlayingAudio
-                  ? t("quizPlaying")
-                  : t("quizPlayClip", { sec: clipDuration })}
+                {t("quizEasyModeBtn")}
               </button>
+              <button
+                type="button"
+                className={`quiz-opt-btn${!easyMode ? " active" : ""}`}
+                aria-pressed={!easyMode}
+                onClick={() => setEasyMode(false)}
+              >
+                {t("quizHardModeBtn")}
+              </button>
+            </div>
+            <p className="quiz-mode-notice">
+              {easyMode ? t("quizEasyHint") : t("quizHardHint")}
+            </p>
+          </div>
 
-              {status === "playing" && (
-                <div className="quiz-helper-btns">
-                  {clipDuration < 5 && (
-                    <button type="button" className="quiz-sub-btn" onClick={extendDuration}>
-                      {t("quizExtendSec", { sec: clipDuration + 1 })}
-                    </button>
-                  )}
-                  <button type="button" className="quiz-sub-btn" onClick={rerollSpot}>
-                    {t("quizChangeSpot")}
-                  </button>
-                  {!showUnitHint && (
-                    <button type="button" className="quiz-sub-btn" onClick={() => setShowUnitHint(true)}>
-                      {t("quizShowUnitHint")}
-                    </button>
-                  )}
-                </div>
+          {/* (2) 문제 수 선택 */}
+          <div className="quiz-setup-section">
+            <h3 className="quiz-setup-heading">{t("quizSetupCountTitle")}</h3>
+            <div className="quiz-option-row">
+              {([5, 10, 30] as const).map((n) => (
+                <button
+                  key={n}
+                  type="button"
+                  className={`quiz-opt-btn${countPreset === n ? " active" : ""}`}
+                  aria-pressed={countPreset === n}
+                  onClick={() => setCountPreset(n)}
+                >
+                  {t("quizCountPreset", { n })}
+                </button>
+              ))}
+              <button
+                type="button"
+                className={`quiz-opt-btn${countPreset === "custom" ? " active" : ""}`}
+                aria-pressed={countPreset === "custom"}
+                onClick={() => setCountPreset("custom")}
+              >
+                {t("quizCountCustom")}
+              </button>
+              {countPreset === "custom" && (
+                <input
+                  type="number"
+                  min={1}
+                  max={100}
+                  className="quiz-custom-count-input"
+                  value={customCountInput}
+                  onChange={(e) => setCustomCountInput(e.target.value)}
+                  placeholder={t("quizCountCustomPlaceholder")}
+                />
               )}
             </div>
+          </div>
 
-            {showUnitHint && status === "playing" && (
-              <p className="quiz-hint-banner">
-                {t("quizUnitHintText", { unit: unitNameMap[currentSong.unit] || currentSong.unit })}
-              </p>
-            )}
-
-            {playerError && <p className="hint busy-note">{t("quizPlayerError")}</p>}
-
-            {/* 정답 입력 영역 */}
-            {status === "playing" && (
-              <div className="quiz-input-wrap">
-                <div className={`quiz-input-row${wrongShake ? " shake" : ""}`}>
-                  <input
-                    type="text"
-                    value={guess}
-                    onChange={(e) => {
-                      setGuess(e.target.value);
-                      setShowSuggestions(true);
-                    }}
-                    onFocus={() => setShowSuggestions(true)}
-                    onKeyDown={(e) => {
-                      if (e.key === "Enter" && !e.nativeEvent.isComposing) {
-                        e.preventDefault();
-                        handleGuessSubmit();
-                      }
-                    }}
-                    placeholder={t("quizInputPlaceholder")}
-                  />
-                  <button type="button" className="download-btn" onClick={() => handleGuessSubmit()}>
-                    {t("quizSubmitBtn")}
-                  </button>
-                </div>
-
-                {/* 초보자 모드 자동완성 후보 */}
-                {easyMode && showSuggestions && suggestions.length > 0 && (
-                  <ul className="quiz-suggestions">
-                    {suggestions.map((s) => (
-                      <li key={s.id}>
-                        <button
-                          type="button"
-                          onClick={() => {
-                            const chosenTitle =
-                              lang === "ja"
-                                ? s.titleJa
-                                : lang === "en"
-                                ? s.titleEn
-                                : s.titleKo;
-                            setGuess(chosenTitle);
-                            handleGuessSubmit(chosenTitle);
-                          }}
-                        >
-                          <span className="sug-unit">{unitNameMap[s.unit] || s.unit}</span>
-                          <span className="sug-title">{formatSongDisplay(s)}</span>
-                        </button>
-                      </li>
-                    ))}
-                  </ul>
-                )}
-
-                {tries > 0 && <p className="quiz-wrong-msg">{t("quizWrongMsg", { tries })}</p>}
-
-                <div style={{ marginTop: "12px" }}>
-                  <button
-                    type="button"
-                    className="quiz-sub-btn giveup"
-                    onClick={handleGiveUp}
-                  >
-                    {t("quizGiveUpBtn")}
-                  </button>
-                </div>
-              </div>
-            )}
-
-            {/* 정답 공개 / 포기 후 결과 영역 */}
-            {revealed && (
-              <div className={`quiz-result-box ${status}`}>
-                <h3>
-                  {status === "correct"
-                    ? t("quizCorrectMsg", { tries })
-                    : t("quizGiveUpMsg")}
-                </h3>
-                <p className="quiz-answer-meta">
-                  <b>{t("quizAnswerUnit")}:</b> {unitNameMap[currentSong.unit] || currentSong.unit}
-                </p>
-                <p className="quiz-answer-meta">
-                  <b>{t("quizAnswerTitles")}:</b>{" "}
-                  {Array.from(
-                    new Set([currentSong.titleKo, currentSong.titleEn, currentSong.titleJa].filter(Boolean))
-                  ).join(" / ")}
-                </p>
+          {/* (3) 출제 유닛 선택 */}
+          <div className="quiz-setup-section">
+            <div className="quiz-setup-unit-header">
+              <h3 className="quiz-setup-heading" style={{ margin: 0 }}>
+                {t("quizSetupUnitTitle", {
+                  selected: selectedUnits.size,
+                  total: allUnits.length,
+                  songs: filteredSongs.length
+                })}
+              </h3>
+              <div className="quiz-unit-actions" style={{ margin: 0 }}>
                 <button
                   type="button"
-                  className="download-btn"
-                  style={{ backgroundColor: "#20c997", marginTop: "10px" }}
-                  onClick={() => startNewQuestion(filteredSongs, currentSong.id)}
+                  className="ghost-sm"
+                  onClick={() => setSelectedUnits(new Set(allUnits.map((u) => u.id)))}
                 >
-                  {t("quizNextBtn")}
+                  {t("quizSelectAllUnits")}
+                </button>
+                <button type="button" className="ghost-sm" onClick={() => setSelectedUnits(new Set())}>
+                  {t("quizClearUnits")}
                 </button>
               </div>
-            )}
-          </>
-        )}
+            </div>
 
-        {/* 유튜브 플레이어 호스트: 화면 안에 정상 크기로 두되 문제 풀이 중에는 가림막으로 덮어 브라우저 차단 방지 */}
-        <div className={revealed ? "quiz-player-visible" : "quiz-player-hidden"}>
-          <div ref={playerHostRef} />
+            <div className="quiz-unit-chips" style={{ marginTop: "10px" }}>
+              {allUnits.map((u) => {
+                const active = selectedUnits.has(u.id);
+                const cnt = songCountByUnit[u.id] || 0;
+                return (
+                  <button
+                    key={u.id}
+                    type="button"
+                    className={`quiz-unit-chip${active ? " active" : ""}`}
+                    aria-pressed={active}
+                    onClick={() => toggleUnit(u.id)}
+                  >
+                    {u.name} <span className="chip-count">({cnt})</span>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
+          {filteredSongs.length === 0 && (
+            <p className="hint busy-note" style={{ marginBottom: "12px" }}>
+              {t("quizNoSongsInFilter")}
+            </p>
+          )}
+
+          <button
+            type="button"
+            className="download-btn quiz-start-main-btn"
+            disabled={filteredSongs.length === 0}
+            onClick={handleStartQuiz}
+          >
+            {t("quizStartBtn", { n: targetQuestionCount })}
+          </button>
         </div>
+      )}
+
+      {/* ────────────────── 2. 문제 풀이 화면 (Playing) ────────────────── */}
+      {phase === "playing" && currentSong && (
+        <div className="quiz-card" ref={quizCardRef}>
+          {/* 상단 진행도 & 설정으로 돌아가기 */}
+          <div className="quiz-playing-header">
+            <div className="quiz-score-badges">
+              <span className="quiz-badge streak">
+                {t("quizProgress", { cur: questionIdx + 1, total: questionQueue.length })}
+              </span>
+              <span className="quiz-badge">
+                {t("quizScoreCurrent", { correct: correctTotal, answered: history.length })}
+              </span>
+            </div>
+            <button
+              type="button"
+              className="ghost-sm"
+              onClick={() => {
+                stopPlayerSafely();
+                setPhase("setup");
+              }}
+            >
+              {t("quizBackToSetup")}
+            </button>
+          </div>
+
+          <p className="hint" style={{ marginTop: "0", marginBottom: "14px" }}>
+            {easyMode ? t("quizEasyHint") : t("quizHardHint")}
+          </p>
+
+          {/* 오디오 컨트롤 영역 */}
+          <div className="quiz-audio-controls">
+            <button
+              type="button"
+              className="download-btn quiz-play-btn"
+              disabled={loadingAudio}
+              onClick={() => playSnippet()}
+            >
+              {loadingAudio
+                ? t("quizLoadingAudio")
+                : isPlayingAudio
+                ? t("quizPlaying")
+                : t("quizPlayClip", { sec: clipDuration })}
+            </button>
+
+            {status === "playing" && (
+              <div className="quiz-helper-btns">
+                {clipDuration < 5 && (
+                  <button type="button" className="quiz-sub-btn" onClick={extendDuration}>
+                    {t("quizExtendSec", { sec: clipDuration + 1 })}
+                  </button>
+                )}
+                <button type="button" className="quiz-sub-btn" onClick={rerollSpot}>
+                  {t("quizChangeSpot")}
+                </button>
+                {!showUnitHint && (
+                  <button type="button" className="quiz-sub-btn" onClick={() => setShowUnitHint(true)}>
+                    {t("quizShowUnitHint")}
+                  </button>
+                )}
+              </div>
+            )}
+          </div>
+
+          {showUnitHint && status === "playing" && (
+            <p className="quiz-hint-banner">
+              {t("quizUnitHintText", { unit: unitNameMap[currentSong.unit] || currentSong.unit })}
+            </p>
+          )}
+
+          {playerError && <p className="hint busy-note">{t("quizPlayerError")}</p>}
+
+          {/* 정답 입력 영역 */}
+          {status === "playing" && (
+            <div className="quiz-input-wrap">
+              <div className={`quiz-input-row${wrongShake ? " shake" : ""}`}>
+                <input
+                  type="text"
+                  value={guess}
+                  onChange={(e) => {
+                    setGuess(e.target.value);
+                    setShowSuggestions(true);
+                  }}
+                  onFocus={() => setShowSuggestions(true)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" && !e.nativeEvent.isComposing) {
+                      e.preventDefault();
+                      handleGuessSubmit();
+                    }
+                  }}
+                  placeholder={t("quizInputPlaceholder")}
+                />
+                <button type="button" className="download-btn" onClick={() => handleGuessSubmit()}>
+                  {t("quizSubmitBtn")}
+                </button>
+              </div>
+
+              {/* 초보자 모드 자동완성 후보 */}
+              {easyMode && showSuggestions && suggestions.length > 0 && (
+                <ul className="quiz-suggestions">
+                  {suggestions.map((s) => (
+                    <li key={s.id}>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const chosenTitle =
+                            lang === "ja"
+                              ? s.titleJa
+                              : lang === "en"
+                              ? s.titleEn
+                              : s.titleKo;
+                          setGuess(chosenTitle);
+                          handleGuessSubmit(chosenTitle);
+                        }}
+                      >
+                        <span className="sug-unit">{unitNameMap[s.unit] || s.unit}</span>
+                        <span className="sug-title">{formatSongDisplay(s)}</span>
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              )}
+
+              {tries > 0 && <p className="quiz-wrong-msg">{t("quizWrongMsg", { tries })}</p>}
+
+              <div style={{ marginTop: "12px" }}>
+                <button
+                  type="button"
+                  className="quiz-sub-btn giveup"
+                  onClick={handleGiveUp}
+                >
+                  {t("quizGiveUpBtn")}
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* 정답 공개 / 포기 후 결과 영역 */}
+          {revealed && (
+            <div className={`quiz-result-box ${status}`}>
+              <h3>
+                {status === "correct"
+                  ? t("quizCorrectMsg", { tries })
+                  : t("quizGiveUpMsg")}
+              </h3>
+              <p className="quiz-answer-meta">
+                <b>{t("quizAnswerUnit")}:</b> {formatFullUnitLabel(currentSong)}
+              </p>
+              <p className="quiz-answer-meta">
+                <b>{t("quizAnswerTitles")}:</b>{" "}
+                {Array.from(
+                  new Set([currentSong.titleKo, currentSong.titleEn, currentSong.titleJa].filter(Boolean))
+                ).join(" / ")}
+              </p>
+              <button
+                type="button"
+                className="download-btn"
+                style={{ backgroundColor: "#20c997", marginTop: "10px" }}
+                onClick={handleNextOrFinish}
+              >
+                {questionIdx + 1 >= questionQueue.length
+                  ? t("quizFinishBtn")
+                  : t("quizNextBtn", { next: questionIdx + 2, total: questionQueue.length })}
+              </button>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* ────────────────── 3. 최종 결과 및 정답률 화면 (Summary) ────────────────── */}
+      {phase === "summary" && (
+        <div className="quiz-card quiz-summary-card">
+          <h2>{t("quizSummaryTitle")}</h2>
+          <div className="quiz-accuracy-box">
+            <div className="quiz-accuracy-label">{t("quizSummaryRateLabel")}</div>
+            <div className="quiz-accuracy-number">{accuracyPercent}%</div>
+            <div className="quiz-accuracy-detail">
+              {t("quizSummaryScoreDetail", { total: questionQueue.length, correct: correctTotal })}
+            </div>
+          </div>
+
+          <h3 className="quiz-setup-heading" style={{ textAlign: "left", marginTop: "20px" }}>
+            {t("quizSummaryHistoryTitle")}
+          </h3>
+          <ul className="quiz-history-list">
+            {history.map((item, idx) => (
+              <li key={`${item.song.id}-${idx}`} className={item.correct ? "correct" : "giveup"}>
+                <span className="hist-num">#{idx + 1}</span>
+                <div className="hist-info">
+                  <div className="hist-title">{formatSongDisplay(item.song)}</div>
+                  <div className="hist-unit">{formatFullUnitLabel(item.song)}</div>
+                </div>
+                <span className={`hist-badge ${item.correct ? "ok" : "fail"}`}>
+                  {item.correct
+                    ? t("quizSummaryBadgeCorrect", { tries: item.tries })
+                    : t("quizSummaryBadgeGiveup")}
+                </span>
+              </li>
+            ))}
+          </ul>
+
+          <div className="finish-buttons" style={{ marginTop: "20px" }}>
+            <button
+              type="button"
+              className="download-btn"
+              style={{ backgroundColor: "#20c997" }}
+              onClick={handleStartQuiz}
+            >
+              {t("quizRetrySameBtn")}
+            </button>
+            <button
+              type="button"
+              className="download-btn"
+              style={{ backgroundColor: "#4dabf7" }}
+              onClick={() => setPhase("setup")}
+            >
+              {t("quizRetrySetupBtn")}
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* 유튜브 플레이어 호스트: 어떤 화면 단계에서든 언마운트되지 않도록 고정 유지 */}
+      <div className={revealed ? "quiz-player-visible" : "quiz-player-hidden"}>
+        <div ref={playerHostRef} />
       </div>
 
-      {/* 직접 유튜브 링크를 넣어 테스트해볼 수 있는 패널 */}
-      <details className="quiz-custom-url" open>
+      {/* 직접 유튜브 링크를 넣어 1문제 테스트해볼 수 있는 패널 */}
+      <details className="quiz-custom-url">
         <summary>{t("quizCustomUrlToggle")}</summary>
         <div className="quiz-custom-form">
           <input
