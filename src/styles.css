@@ -706,13 +706,85 @@ h1 {
   max-width: 680px;
   margin: 0 auto;
 }
-.quiz-top-bar {
+.quiz-card {
+  background: #fff;
+  border-radius: 16px;
+  padding: 24px 20px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.06);
+  margin-bottom: 18px;
+}
+.quiz-setup-card {
+  text-align: left;
+}
+.quiz-setup-section {
+  padding-bottom: 18px;
+  margin-bottom: 18px;
+  border-bottom: 1px solid #f1f3f5;
+}
+.quiz-setup-heading {
+  margin: 0 0 10px;
+  font-size: 1rem;
+  color: #212529;
+}
+.quiz-option-row {
   display: flex;
-  justify-content: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+.quiz-opt-btn {
+  border: 1.5px solid #ced4da;
+  background: #f8f9fa;
+  color: #495057;
+  padding: 8px 16px;
+  border-radius: 10px;
+  font-size: 0.9rem;
+  font-weight: 700;
+  cursor: pointer;
+}
+.quiz-opt-btn.active {
+  background: #e7f5ff;
+  border-color: #1c7ed6;
+  color: #1864ab;
+}
+.quiz-custom-count-input {
+  width: 110px;
+  padding: 8px 10px;
+  border: 1.5px solid #1c7ed6;
+  border-radius: 10px;
+  font-size: 0.9rem;
+  font-weight: 700;
+}
+.quiz-mode-notice {
+  margin: 10px 0 0;
+  padding: 10px 12px;
+  background: #f8f9fa;
+  border-radius: 8px;
+  font-size: 0.84rem;
+  color: #495057;
+  line-height: 1.45;
+}
+.quiz-setup-unit-header {
+  display: flex;
+  justify-content: space-between;
   align-items: center;
   flex-wrap: wrap;
-  gap: 12px 20px;
-  margin: 12px 0;
+  gap: 8px;
+}
+.quiz-start-main-btn {
+  width: 100%;
+  font-size: 1.08rem;
+  padding: 13px 20px;
+  background-color: #1c7ed6;
+}
+
+.quiz-playing-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 12px;
 }
 .quiz-score-badges {
   display: flex;
@@ -731,25 +803,6 @@ h1 {
   color: #d9480f;
 }
 
-.quiz-unit-filter {
-  background: #fff;
-  border: 1px solid #dee2e6;
-  border-radius: 12px;
-  padding: 10px 14px;
-  margin-bottom: 16px;
-  text-align: left;
-}
-.quiz-unit-filter summary {
-  font-weight: 700;
-  font-size: 0.9rem;
-  cursor: pointer;
-  color: #343a40;
-}
-.quiz-unit-actions {
-  display: flex;
-  gap: 8px;
-  margin: 10px 0 8px;
-}
 .ghost-sm {
   background: #f1f3f5;
   border: 1px solid #ced4da;
@@ -783,13 +836,6 @@ h1 {
   font-size: 0.75rem;
 }
 
-.quiz-card {
-  background: #fff;
-  border-radius: 16px;
-  padding: 24px 20px;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.06);
-  margin-bottom: 18px;
-}
 .quiz-audio-controls {
   display: flex;
   flex-direction: column;
@@ -938,17 +984,103 @@ h1 {
   font-size: 0.92rem;
 }
 
-/* 문제 풀이 중에는 유튜브 영상을 1x1 투명 영역으로 숨김(소리만 재생) */
-.quiz-player-hidden {
-  width: 1px;
-  height: 1px;
-  opacity: 0.01;
+/* 최종 결과 및 정답률 화면 */
+.quiz-accuracy-box {
+  background: #f8f9fa;
+  border: 1px solid #dee2e6;
+  border-radius: 14px;
+  padding: 20px;
+  margin: 12px 0;
+}
+.quiz-accuracy-label {
+  font-size: 0.9rem;
+  font-weight: 700;
+  color: #495057;
+}
+.quiz-accuracy-number {
+  font-size: 2.8rem;
+  font-weight: 800;
+  color: #1c7ed6;
+  line-height: 1.2;
+  margin: 4px 0;
+}
+.quiz-accuracy-detail {
+  font-size: 0.95rem;
+  color: #343a40;
+  font-weight: 600;
+}
+.quiz-history-list {
+  list-style: none;
+  padding: 0;
+  margin: 8px 0 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  text-align: left;
+}
+.quiz-history-list li {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: #f8f9fa;
+  border: 1px solid #e9ecef;
+}
+.quiz-history-list li.correct {
+  background: #f4fce3;
+  border-color: #d8f5a2;
+}
+.hist-num {
+  font-weight: 800;
+  color: #868e96;
+  font-size: 0.85rem;
+  min-width: 28px;
+}
+.hist-info {
+  flex: 1;
+  min-width: 0;
+}
+.hist-title {
+  font-weight: 700;
+  font-size: 0.92rem;
+  color: #212529;
   overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.hist-unit {
+  font-size: 0.78rem;
+  color: #868e96;
+}
+.hist-badge {
+  font-size: 0.8rem;
+  font-weight: 700;
+  padding: 4px 10px;
+  border-radius: 999px;
+  flex-shrink: 0;
+}
+.hist-badge.ok {
+  background: #d3f9d8;
+  color: #2b8a3e;
+}
+.hist-badge.fail {
+  background: #e9ecef;
+  color: #495057;
+}
+
+/* 문제 풀이 중에는 유튜브 영상을 화면 밖으로 숨김(크기는 유지하여 브라우저 오디오 차단 방지) */
+.quiz-player-hidden {
+  position: fixed;
+  left: -9999px;
+  top: 0;
+  width: 280px;
+  height: 158px;
+  opacity: 0.01;
   pointer-events: none;
-  position: absolute;
 }
 .quiz-player-visible {
-  margin-top: 14px;
+  margin: -6px auto 18px;
   display: flex;
   justify-content: center;
 }
