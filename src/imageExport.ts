@@ -1,9 +1,9 @@
-import html2canvas from "html2canvas";
-import { IMAGE_SCALE } from "./types";
 import type { Agency, Member, Picks } from "./types";
+import { IMAGE_SCALE } from "./config";
+import html2canvas from "html2canvas";
 
 // ───────────────────────── 이미지 렌더링 및 저장 ─────────────────────────
-export async function renderOnce(target: HTMLElement, scale: number): Promise<Blob> {
+async function renderOnce(target: HTMLElement, scale: number): Promise<Blob> {
   const canvas = await html2canvas(target, {
     useCORS: true,
     scale,
@@ -40,7 +40,7 @@ export async function renderToBlob(target: HTMLElement, expand: boolean): Promis
 }
 
 // ── 개인 취향표 이미지: html2canvas 없이 캔버스에 직접 그림 (모바일/앱 안 브라우저에서도 안정적) ──
-export function loadImage(src: string, fallback?: string): Promise<HTMLImageElement | null> {
+function loadImage(src: string, fallback?: string): Promise<HTMLImageElement | null> {
   const tryLoad = (u: string) =>
     new Promise<HTMLImageElement | null>((resolve) => {
       const im = new Image();
@@ -59,7 +59,7 @@ export function loadImage(src: string, fallback?: string): Promise<HTMLImageElem
   return tryLoad(src).then((im) => im ?? (fallback ? tryLoad(fallback) : null));
 }
 
-export function roundRectPath(
+function roundRectPath(
   ctx: CanvasRenderingContext2D,
   x: number,
   y: number,

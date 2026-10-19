@@ -1,75 +1,31 @@
-import React, { useState, useEffect, useRef, useMemo } from "react";
-import { onAuthStateChanged, signInAnonymously } from "firebase/auth";
+import type { Agency, Member, MyRoom, Picks, RoomData, RoomUsers, UserDoc } from "./types";
 import {
-  doc,
-  setDoc,
-  updateDoc,
-  writeBatch,
-  getDocFromServer,
-  serverTimestamp
-} from "firebase/firestore";
+  BOARD_GAP, BOARD_SLOT, CARD_PADDING, IN_APP_BROWSER, MAX_NICKNAME_LENGTH, MAX_ROOM_NAME,
+  MAX_USERS_PER_ROOM, MY_ROOMS_MAX, NICK_KEY, PICKS_KEY, REFRESH_COOLDOWN_MS, ROOM_CACHE_TTL_MS,
+  STATS_SAMPLE_RATE, SUBMIT_COOLDOWN_MS
+} from "./config";
+import { LANG_KEY, LOCALE, detectInitialLang, translate } from "./i18n";
+import type { Lang, MsgKey } from "./i18n";
+import React, { useEffect, useMemo, useRef, useState } from "react";
+import { auth, db } from "./firebaseClient";
+import { balancedMaxWidth, copyText, safeFileName, samePicks, withTimeout } from "./utils";
+import { blobToDataUrl, renderPersonalBlob, renderToBlob, triggerDownload } from "./imageExport";
+import { computeMatches } from "./matching";
+import { doc, getDocFromServer, serverTimestamp, setDoc, updateDoc, writeBatch } from "firebase/firestore";
+import { fetchRoom, generateRoomId, loadRoomCache, parseRoomId, parseUserDoc, saveRoomCache } from "./rooms";
+import { isServerBusyError, isServerBusyNow, markServerBusy } from "./serverStatus";
+import { layoutLogos } from "./logoLayout";
+import { loadAgencies } from "./csv";
+import { loadLocalNickname, loadLocalPicks, loadMyRooms, saveLocal, saveMyRooms } from "./storage";
+import { localizeAgencies } from "./localize";
+import { onAuthStateChanged, signInAnonymously } from "firebase/auth";
+import { onImgError } from "./assets";
+import { sendAnonymousStats } from "./stats";
+import LangSwitch from "./components/LangSwitch";
+import MyRoomsPanel from "./components/MyRoomsPanel";
+import ImagePreviewModal from "./components/ImagePreviewModal";
 import "./styles.css";
 import "./lang.css";
-import { layoutLogos } from "./logoLayout";
-import { computeMatches } from "./matching";
-import { LANGS, LANG_LABEL, LANG_KEY, LOCALE, detectInitialLang, normalizeLang, translate } from "./i18n";
-import type { Lang, MsgKey } from "./i18n";
-import { auth, db } from "./firebaseClient";
-import {
-  agencyConfig,
-  BOARD_GAP,
-  BOARD_SLOT,
-  CARD_PADDING,
-  IN_APP_BROWSER,
-  LOGO_IMG_DIR,
-  MAX_NICKNAME_LENGTH,
-  MAX_ROOM_NAME,
-  MAX_USERS_PER_ROOM,
-  MEMBER_IMG_DIR,
-  MY_ROOMS_MAX,
-  NICK_KEY,
-  PICKS_KEY,
-  REFRESH_COOLDOWN_MS,
-  ROOM_CACHE_TTL_MS,
-  STATS_SAMPLE_RATE,
-  SUBMIT_COOLDOWN_MS
-} from "./types";
-import type { Agency, Group, Member, MyRoom, NameMap, Picks, RoomData, RoomUsers, UserDoc } from "./types";
-import {
-  avatarUri,
-  badgeUri,
-  balancedMaxWidth,
-  copyText,
-  formatDate,
-  generateRoomId,
-  loadCsv,
-  localizeAgencies,
-  onImgError,
-  parseRoomId,
-  resolveAsset,
-  resolveImg,
-  safeFileName,
-  samePicks,
-  stripQuotes,
-  withTimeout
-} from "./utils";
-import {
-  fetchRoom,
-  isServerBusyError,
-  isServerBusyNow,
-  loadLocalNickname,
-  loadLocalPicks,
-  loadMyRooms,
-  loadRoomCache,
-  markServerBusy,
-  parseUserDoc,
-  saveLocal,
-  saveMyRooms,
-  saveRoomCache,
-  sendAnonymousStats
-} from "./storage";
-import { blobToDataUrl, renderPersonalBlob, renderToBlob, triggerDownload } from "./imageExport";
-import SongQuiz from "./SongQuiz";
 
 export default function App() {
   // 인증(익명) — 공유(저장)할 때만 필요합니다. 실패해도 선택/이미지 저장은 가능
@@ -84,56 +40,6 @@ export default function App() {
   const [roomLoaded, setRoomLoaded] = useState<boolean>(() => !parseRoomId());
   const [roomError, setRoomError] = useState(false);
 
-  // 주소(#/quiz, ?page=quiz, ?tab=quiz, /quiz)를 읽어 초기 서비스 화면 결정
-  type ServiceId = "picks" | "quiz";
-  const detectServiceFromUrl = (): ServiceId => {
-    const hash = window.location.hash.replace(/^#\/?/, "").split("?")[0].trim().toLowerCase();
-    if (hash === "quiz" || hash === "songquiz") return "quiz";
-    if (hash === "picks" || hash === "home") return "picks";
-    const sp = new URLSearchParams(window.location.search);
-    const q = (sp.get("page") || sp.get("tab") || "").toLowerCase();
-    if (q === "quiz" || q === "songquiz") return "quiz";
-    if (/\/(quiz|songquiz)\/?$/i.test(window.location.pathname)) return "quiz";
-    return "picks";
-  };
-
-  const [activeTab, setActiveTab] = useState<ServiceId>(() => detectServiceFromUrl());
-  const [drawerOpen, setDrawerOpen] = useState(false);
-
-  // 서비스 이동 함수: 주소창에 #/quiz 또는 #/picks 를 반영해 고유 링크와 뒤로가기를 지원
-  const navigateService = (target: ServiceId) => {
-    setActiveTab(target);
-    setDrawerOpen(false);
-    const targetHash = target === "quiz" ? "#/quiz" : "#/picks";
-    if (window.location.hash !== targetHash) {
-      window.location.hash = targetHash;
-    }
-    window.scrollTo({ top: 0, behavior: "smooth" });
-  };
-
-  // 브라우저 뒤로가기/앞으로가기 또는 주소 해시 변경 시 화면 동기화
-  useEffect(() => {
-    const onRouteChange = () => {
-      setActiveTab(detectServiceFromUrl());
-      setDrawerOpen(false);
-    };
-    window.addEventListener("hashchange", onRouteChange);
-    window.addEventListener("popstate", onRouteChange);
-    return () => {
-      window.removeEventListener("hashchange", onRouteChange);
-      window.removeEventListener("popstate", onRouteChange);
-    };
-  }, []);
-
-  // ESC 키로 서랍 메뉴 닫기
-  useEffect(() => {
-    if (!drawerOpen) return;
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") setDrawerOpen(false);
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [drawerOpen]);
   const [showResult, setShowResult] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [lang, setLang] = useState<Lang>(() => detectInitialLang());
@@ -148,19 +54,17 @@ export default function App() {
   // 언어가 바뀌면 <html lang>과 탭 제목도 맞춤
   useEffect(() => {
     document.documentElement.lang = lang;
-    document.title = translate(lang, activeTab === "quiz" ? "quizTitle" : "appTitle");
-  }, [lang, activeTab]);
+    document.title = translate(lang, "appTitle");
+  }, [lang]);
 
-  // 주소에 ?lang= 이 실려 왔다면(앱 안 브라우저에서 넘어온 경우) 이 기기의 언어로 저장하고,
-  // 공유 링크에 언어가 섞이지 않도록 주소에서 지움
+  // 주소에 ?lang= 이 실려 왔다면(앱 안 브라우저에서 넘어온 경우) 이번 접속에서만 그 언어로 보여 주고
+  // (이 기기의 언어 설정으로 저장하지 않음), 공유 링크에 언어가 섞이지 않도록 주소에서만 지움
   useEffect(() => {
     const sp = new URLSearchParams(window.location.search);
     if (!sp.has("lang")) return;
-    const fromUrl = normalizeLang(sp.get("lang"));
-    if (fromUrl) saveLocal(LANG_KEY, fromUrl);
     sp.delete("lang");
     const qs = sp.toString();
-    window.history.replaceState({}, "", window.location.pathname + (qs ? `?${qs}` : "") + window.location.hash);
+    window.history.replaceState({}, "", window.location.pathname + (qs ? `?${qs}` : ""));
   }, []);
 
   const [baseAgencies, setBaseAgencies] = useState<Agency[]>([]); // CSV 그대로 (한국어 이름)
@@ -205,88 +109,21 @@ export default function App() {
     return unsub;
   }, []);
 
-  // ── CSV 로드 (멤버: ES_list.csv, 유닛 로고: units.csv)
+  // ── CSV 로드 (멤버: ES_list.csv, 유닛 로고·이름: units.csv) → csv.ts의 loadAgencies
   useEffect(() => {
     let cancelled = false;
-    (async () => {
-      try {
-        const rows = await loadCsv("ES_list.csv");
-        if (rows.length > 0 && Object.keys(rows[0]).join("").includes("html")) {
+    loadAgencies()
+      .then((parsed) => {
+        if (!cancelled) setBaseAgencies(parsed);
+      })
+      .catch((err) => {
+        if ((err as { code?: string })?.code === "csv-path") {
           alert(translate(langRef.current, "alertCsvPath"));
-          return;
+        } else {
+          console.error("CSV 로드 에러:", err);
+          alert(translate(langRef.current, "alertCsvError"));
         }
-
-        // units.csv: unit,logo  → 유닛·소속사 이름(대소문자 무시)으로 로고 연결. 파일이 없어도 정상 동작
-        const logoMap: Record<string, string> = {};
-        const nameMap: Record<string, NameMap> = {}; // units.csv의 name_en / name_ja
-        try {
-          const unitRows = await loadCsv("units.csv");
-          unitRows.forEach((r) => {
-            if (!("unit" in r)) return; // 파일이 없어 404 HTML이 읽힌 경우 무시
-            const key = stripQuotes(r.unit).toLowerCase();
-            const logo = resolveImg(stripQuotes(r.logo), LOGO_IMG_DIR);
-            if (key && logo) logoMap[key] = logo;
-            const en = stripQuotes(r.name_en);
-            const ja = stripQuotes(r.name_ja);
-            if (key && (en || ja)) nameMap[key] = { en, ja };
-          });
-        } catch (err) {
-          console.warn("units.csv를 읽지 못해 글자 로고를 사용합니다.", err);
-        }
-        if (cancelled) return;
-
-        const usedIds = new Set<string>();
-        const parsed: Agency[] = agencyConfig.map((cfg, aIdx) => {
-          const groups: Group[] = [];
-          cfg.units.forEach((unit) => {
-            const unitRows = rows.filter(
-              (r) => stripQuotes(r.unit).toLowerCase() === unit.name.toLowerCase()
-            );
-            if (unitRows.length === 0) return;
-
-            groups.push({
-              id: unit.name,
-              name: unit.name,
-              names: nameMap[unit.name.toLowerCase()],
-              logo:
-                logoMap[unit.name.toLowerCase()] ||
-                resolveAsset(unit.logo) ||
-                badgeUri(unit.name, 120, 120, true),
-              members: unitRows.map((r) => {
-                const mName = stripQuotes(r.name) || "알수없음";
-                let id = `${unit.name}::${mName}`;
-                for (let n = 2; usedIds.has(id); n++) id = `${unit.name}::${mName}#${n}`; // 동명이인 대비
-                usedIds.add(id);
-                const fallback = avatarUri(mName);
-                return {
-                  id,
-                  groupId: unit.name,
-                  name: mName,
-                  names: { en: stripQuotes(r.name_en ?? ""), ja: stripQuotes(r.name_ja ?? "") },
-                  img: resolveImg(stripQuotes(r.img), MEMBER_IMG_DIR) || fallback,
-                  fallback
-                };
-              })
-            });
-          });
-          return {
-            id: `agency-${aIdx}`,
-            name: cfg.name,
-            names: nameMap[cfg.name.toLowerCase()],
-            logo:
-              logoMap[cfg.name.toLowerCase()] ||
-              resolveAsset(cfg.logo) ||
-              badgeUri(cfg.name, 240, 48, false),
-            groups
-          };
-        });
-
-        setBaseAgencies(parsed);
-      } catch (err) {
-        console.error("CSV 로드 에러:", err);
-        alert(translate(langRef.current, "alertCsvError"));
-      }
-    })();
+      });
     return () => {
       cancelled = true;
     };
@@ -315,7 +152,7 @@ export default function App() {
     sp.delete("pk");
     sp.delete("nk");
     const qs = sp.toString();
-    window.history.replaceState({}, "", window.location.pathname + (qs ? `?${qs}` : "") + window.location.hash);
+    window.history.replaceState({}, "", window.location.pathname + (qs ? `?${qs}` : ""));
   }, [agencies]);
 
   // 방 이름이 바뀌면 '내가 참여한 방' 목록의 이름도 맞춰 둠
@@ -898,185 +735,23 @@ export default function App() {
 
   const myResultExists = !!uid && !!roomUsers[uid];
 
-  const langSwitch = (
-    <div className="lang-switch" role="group" aria-label={t("langLabel")}>
-      {LANGS.map((l) => (
-        <button
-          key={l}
-          type="button"
-          className={l === lang ? "active" : ""}
-          aria-pressed={l === lang}
-          onClick={() => changeLang(l)}
-        >
-          {LANG_LABEL[l]}
-        </button>
-      ))}
-    </div>
-  );
+  const langSwitch = <LangSwitch lang={lang} onChange={changeLang} t={t} />;
 
-  const myRoomsPanel =
-    myRooms.length > 0 ? (
-      <details className="my-rooms">
-        <summary>{t("myRoomsSummary", { n: myRooms.length })}</summary>
-        <ul>
-          {myRooms.map((r) => (
-            <li key={r.id} className={r.id === roomId ? "current" : ""}>
-              <button
-                type="button"
-                className="room-link"
-                onClick={() => openRoom(r.id)}
-                disabled={r.id === roomId}
-              >
-                <span className="room-title">{r.roomName || t("unnamedRoom")}</span>
-                <span className="room-nick">{r.nickname}</span>
-                <span className="room-date">{formatDate(r.lastAt, lang)}</span>
-                <span className="room-code">{r.id.slice(0, 6)}…</span>
-                {r.id === roomId && <span className="room-now">{t("currentRoom")}</span>}
-              </button>
-              <button
-                type="button"
-                className="room-remove"
-                aria-label={t("removeFromList")}
-                onClick={() => removeMyRoom(r.id)}
-              >
-                ×
-              </button>
-            </li>
-          ))}
-        </ul>
-        <p className="hint-inline">{t("myRoomsHint")}</p>
-      </details>
-    ) : null;
-
-  // 앞으로 새 서비스를 추가할 때 이 배열에 항목만 추가하면 서랍 메뉴와 고유 주소(#/아이디)가 자동으로 표시됩니다.
-  const serviceList: {
-    id: ServiceId;
-    icon: string;
-    title: string;
-    desc: string;
-    hashPath: string;
-  }[] = [
-    {
-      id: "picks",
-      icon: "⭐",
-      title: t("tabPicks").replace(/^⭐\s*/, ""),
-      desc: t("navDescPicks"),
-      hashPath: "#/picks"
-    },
-    {
-      id: "quiz",
-      icon: "🎵",
-      title: t("tabQuiz").replace(/^🎵\s*/, ""),
-      desc: t("navDescQuiz"),
-      hashPath: "#/quiz"
-    }
-  ];
-
-  const currentService = serviceList.find((s) => s.id === activeTab) || serviceList[0];
-
-  const copyCurrentServiceUrl = async () => {
-    const base = window.location.origin + window.location.pathname;
-    const shareUrl =
-      activeTab === "quiz"
-        ? `${base}#/quiz`
-        : roomId
-        ? `${base}?room=${roomId}#/picks`
-        : `${base}#/picks`;
-    const ok = await copyText(shareUrl);
-    alert(ok ? t("navPageUrlCopied", { url: shareUrl }) : t("alertCopyFailed"));
-  };
-
-  const siteHeader = (
-    <>
-      <header className="site-header">
-        <div className="site-header-inner">
-          <div className="site-header-left">
-            <button
-              type="button"
-              className="menu-trigger-btn"
-              aria-expanded={drawerOpen}
-              onClick={() => setDrawerOpen(true)}
-            >
-              <span className="menu-burger-icon" aria-hidden="true">☰</span>
-              <span>{t("navMenuBtn")}</span>
-            </button>
-            <span className="current-service-pill">
-              <span aria-hidden="true">{currentService.icon}</span>
-              <span>{currentService.title}</span>
-            </span>
-          </div>
-          <div className="site-header-right">
-            <button
-              type="button"
-              className="copy-page-url-btn"
-              onClick={copyCurrentServiceUrl}
-              title={t("navCopyPageUrl")}
-            >
-              {t("navCopyPageUrl")}
-            </button>
-            {langSwitch}
-          </div>
-        </div>
-      </header>
-
-      {drawerOpen && (
-        <div
-          className="drawer-backdrop"
-          role="dialog"
-          aria-modal="true"
-          aria-label={t("navDrawerTitle")}
-          onClick={() => setDrawerOpen(false)}
-        >
-          <aside className="service-drawer" onClick={(e) => e.stopPropagation()}>
-            <div className="service-drawer-head">
-              <div>
-                <h2 className="service-drawer-title">{t("navDrawerTitle")}</h2>
-                <p className="service-drawer-sub">{t("navDrawerSub")}</p>
-              </div>
-              <button
-                type="button"
-                className="service-drawer-close"
-                aria-label={t("close")}
-                onClick={() => setDrawerOpen(false)}
-              >
-                ×
-              </button>
-            </div>
-            <nav className="service-drawer-list">
-              {serviceList.map((svc) => {
-                const isActive = svc.id === activeTab;
-                return (
-                  <a
-                    key={svc.id}
-                    href={svc.hashPath}
-                    className={`service-drawer-card ${isActive ? "active" : ""}`}
-                    onClick={(e) => {
-                      e.preventDefault();
-                      navigateService(svc.id);
-                    }}
-                  >
-                    <div className="service-card-top">
-                      <span className="service-card-icon">{svc.icon}</span>
-                      <span className="service-card-name">{svc.title}</span>
-                      <span className="service-card-path">{svc.hashPath}</span>
-                    </div>
-                    <p className="service-card-desc">{svc.desc}</p>
-                  </a>
-                );
-              })}
-            </nav>
-          </aside>
-        </div>
-      )}
-    </>
+  const myRoomsPanel = (
+    <MyRoomsPanel
+      myRooms={myRooms}
+      roomId={roomId}
+      lang={lang}
+      t={t}
+      onOpen={openRoom}
+      onRemove={removeMyRoom}
+    />
   );
 
   return (
     <div className="App">
-      {siteHeader}
-      {activeTab === "quiz" ? (
-        <SongQuiz agencies={agencies} lang={lang} t={t} />
-      ) : !showResult ? (
+      {langSwitch}
+      {!showResult ? (
         <>
           {myRoomsPanel}
           <h1>{t("appTitle")}</h1>
@@ -1444,34 +1119,14 @@ export default function App() {
       )}
 
       {preview && (
-        <div className="img-preview-overlay" onClick={() => setPreview(null)}>
-          <div className="img-preview-box" onClick={(e) => e.stopPropagation()}>
-            <p className="preview-guide">
-              {t("previewGuideA")}
-              <br />
-              {t("previewGuideB")}
-            </p>
-            <div className="preview-actions">
-              {typeof navigator.canShare === "function" &&
-                navigator.canShare({ files: [new File([preview.blob], preview.name, { type: "image/png" })] }) && (
-                  <button type="button" className="download-btn" onClick={sharePreview}>
-                    {t("previewShare")}
-                  </button>
-                )}
-              <button type="button" className="download-btn" onClick={openExternal}>
-                {t("previewOpenExternal")}
-              </button>
-              <button type="button" className="download-btn" onClick={copyTransferUrl}>
-                {t("previewCopyUrl")}
-              </button>
-            </div>
-            <img src={preview.src} alt={t("previewImgAlt")} />
-            <p className="preview-sub">{t("previewSub")}</p>
-            <button type="button" className="download-btn" onClick={() => setPreview(null)}>
-              {t("close")}
-            </button>
-          </div>
-        </div>
+        <ImagePreviewModal
+          preview={preview}
+          t={t}
+          onClose={() => setPreview(null)}
+          onShare={sharePreview}
+          onOpenExternal={openExternal}
+          onCopyUrl={copyTransferUrl}
+        />
       )}
     </div>
   );

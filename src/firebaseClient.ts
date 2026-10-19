@@ -5,7 +5,7 @@ import { getFirestore } from "firebase/firestore";
 
 // ───────────────────────── Firebase ─────────────────────────
 // (웹 API 키는 공개되어도 되는 값입니다. 실제 보호는 Firestore 규칙이 담당합니다.)
-export const firebaseConfig = {
+const firebaseConfig = {
   apiKey: "AIzaSyC1TjmcvbKHRWkUm1u8isrBzlBNLytXd0o",
   authDomain: "esmulti-fa048.firebaseapp.com",
   projectId: "esmulti-fa048",
@@ -15,7 +15,7 @@ export const firebaseConfig = {
   measurementId: "G-EJH36NK25P"
 };
 
-export const app = initializeApp(firebaseConfig);
+const app = initializeApp(firebaseConfig);
 
 // 로컬 개발(yarn start)에서는 디버그 토큰 사용 (배포된 사이트에는 영향 없음)
 if (process.env.NODE_ENV !== "production") {
