@@ -144,6 +144,14 @@ const ko = {
   alertRenameFail: "방 이름을 바꾸지 못했습니다. 방을 만든 사람만 바꿀 수 있어요.",
 
   // ── 1초 노래 맞추기 ──
+  // ── 상단 헤더 & 서비스 서랍 메뉴 ──
+  navMenuBtn: "서비스 메뉴",
+  navDrawerTitle: "전체 서비스 목록",
+  navDrawerSub: "이동할 서비스를 선택하세요 (각 서비스는 고유 주소를 가집니다)",
+  navCopyPageUrl: "🔗 이 페이지 주소 복사",
+  navPageUrlCopied: "현재 페이지 주소가 복사되었습니다!\n{url}",
+  navDescPicks: "유닛마다 최애를 1명씩 고르고 이미지 저장·방 공유로 일치율을 비교해보세요.",
+  navDescQuiz: "유튜브 음원의 랜덤 1초 구간을 듣고 어떤 곡인지 맞혀보세요!",
   tabPicks: "⭐ 유닛별 취향표",
   tabQuiz: "🎵 1초 노래 맞추기",
   quizTitle: "앙스타 1초 듣고 노래 맞추기",
@@ -312,6 +320,14 @@ const en: Record<MsgKey, string> = {
   alertRenameFail: "Couldn't rename the room. Only the room creator can rename it.",
 
   // ── 1-Second Song Quiz ──
+  // ── Top Header & Service Drawer Menu ──
+  navMenuBtn: "Services",
+  navDrawerTitle: "All Services",
+  navDrawerSub: "Choose a service (each has its own direct link)",
+  navCopyPageUrl: "🔗 Copy Page Link",
+  navPageUrlCopied: "Page link copied to clipboard!\n{url}",
+  navDescPicks: "Pick your favorite member from each unit, save an image, or compare match rates with friends.",
+  navDescQuiz: "Listen to a random 1-second clip and guess the Ensemble Stars song!",
   tabPicks: "⭐ Favorite Picks",
   tabQuiz: "🎵 1s Song Quiz",
   quizTitle: "Ensemble Stars!! 1-Second Song Quiz",
@@ -478,6 +494,14 @@ const ja: Record<MsgKey, string> = {
   alertRenameFail: "ルーム名を変更できませんでした。変更できるのはルームを作った人だけです。",
 
   // ── 1秒イントロクイズ ──
+  // ── 上部ヘッダー＆サービスメニュー ──
+  navMenuBtn: "メニュー",
+  navDrawerTitle: "サービス一覧",
+  navDrawerSub: "移動するサービスを選択してください（各サービスに専用URLがあります）",
+  navCopyPageUrl: "🔗 このページのURLをコピー",
+  navPageUrlCopied: "現在のページのURLをコピーしました！\n{url}",
+  navDescPicks: "ユニットごとに推しを1人選んで画像保存やルーム共有で一致率を比べよう。",
+  navDescQuiz: "YouTube音源のランダムな1秒を聴いて曲名を当てよう！",
   tabPicks: "⭐ ユニット別推し表",
   tabQuiz: "🎵 1秒曲当てクイズ",
   quizTitle: "あんスタ！1秒聴いて曲当てクイズ",

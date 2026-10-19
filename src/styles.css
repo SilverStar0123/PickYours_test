@@ -1114,3 +1114,230 @@ h1 {
   border: 1px solid #ced4da;
   border-radius: 6px;
 }
+
+
+/* ── 상단 고정 헤더바 & 옆에서 열리는 서비스 서랍(Drawer) 메뉴 ── */
+.site-header {
+  position: sticky;
+  top: 0;
+  z-index: 900;
+  background: rgba(255, 255, 255, 0.92);
+  backdrop-filter: blur(10px);
+  border-bottom: 1px solid #e9ecef;
+  margin: -20px -20px 20px -20px;
+  padding: 10px 16px;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.04);
+}
+.site-header-inner {
+  max-width: 980px;
+  margin: 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.site-header-left {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.site-header-right {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.site-header-right .lang-switch {
+  margin: 0;
+}
+.menu-trigger-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 8px 14px;
+  border-radius: 10px;
+  border: 1.5px solid #ced4da;
+  background: #ffffff;
+  color: #212529;
+  font-size: 0.9rem;
+  font-weight: 800;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
+}
+.menu-trigger-btn:hover {
+  border-color: #228be6;
+  color: #1c7ed6;
+  background: #f8f9fa;
+}
+.menu-burger-icon {
+  font-size: 1.05rem;
+  line-height: 1;
+}
+.current-service-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  border-radius: 999px;
+  background: #e7f5ff;
+  color: #1864ab;
+  font-size: 0.86rem;
+  font-weight: 800;
+}
+.copy-page-url-btn {
+  padding: 6px 11px;
+  border-radius: 999px;
+  border: 1px solid #d0ebff;
+  background: #f8f9fa;
+  color: #1971c2;
+  font-size: 0.78rem;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+.copy-page-url-btn:hover {
+  background: #e7f5ff;
+  border-color: #74c0fc;
+}
+
+/* 서랍형(Drawer) 모달 배경 및 패널 */
+.drawer-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 2000;
+  background: rgba(15, 23, 42, 0.45);
+  backdrop-filter: blur(2px);
+  display: flex;
+  justify-content: flex-start;
+  animation: fadeInBackdrop 0.18s ease-out;
+}
+@keyframes fadeInBackdrop {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+.service-drawer {
+  width: min(360px, 86vw);
+  height: 100%;
+  background: #ffffff;
+  box-shadow: 6px 0 28px rgba(0, 0, 0, 0.18);
+  padding: 22px 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  overflow-y: auto;
+  text-align: left;
+  animation: slideInDrawer 0.22s cubic-bezier(0.16, 1, 0.3, 1);
+}
+@keyframes slideInDrawer {
+  from { transform: translateX(-100%); }
+  to { transform: translateX(0); }
+}
+.service-drawer-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 12px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid #e9ecef;
+}
+.service-drawer-title {
+  margin: 0 0 4px 0;
+  font-size: 1.15rem;
+  font-weight: 800;
+  color: #212529;
+}
+.service-drawer-sub {
+  margin: 0;
+  font-size: 0.8rem;
+  color: #868e96;
+  line-height: 1.4;
+}
+.service-drawer-close {
+  border: none;
+  background: #f1f3f5;
+  color: #495057;
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  font-size: 1.2rem;
+  font-weight: 700;
+  line-height: 1;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+.service-drawer-close:hover {
+  background: #e9ecef;
+  color: #212529;
+}
+.service-drawer-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.service-drawer-card {
+  display: block;
+  text-decoration: none;
+  padding: 14px 15px;
+  border-radius: 14px;
+  border: 2px solid #e9ecef;
+  background: #f8f9fa;
+  color: #212529;
+  transition: all 0.15s ease;
+}
+.service-drawer-card:hover {
+  border-color: #74c0fc;
+  background: #ffffff;
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(28, 126, 214, 0.08);
+}
+.service-drawer-card.active {
+  border-color: #228be6;
+  background: #e7f5ff;
+}
+.service-card-top {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+.service-card-icon {
+  font-size: 1.2rem;
+}
+.service-card-name {
+  font-size: 0.98rem;
+  font-weight: 800;
+  color: #1864ab;
+  flex: 1;
+}
+.service-card-path {
+  font-size: 0.72rem;
+  font-family: monospace;
+  padding: 2px 7px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.85);
+  color: #495057;
+  border: 1px solid #dee2e6;
+}
+.service-card-desc {
+  margin: 0;
+  font-size: 0.82rem;
+  color: #495057;
+  line-height: 1.45;
+}
+
+@media (max-width: 600px) {
+  .site-header {
+    margin: -12px -12px 14px -12px;
+    padding: 8px 12px;
+  }
+  .current-service-pill {
+    font-size: 0.8rem;
+    padding: 5px 10px;
+  }
+  .copy-page-url-btn {
+    font-size: 0.74rem;
+    padding: 5px 9px;
+  }
+}

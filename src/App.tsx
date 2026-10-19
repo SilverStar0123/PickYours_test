@@ -84,9 +84,56 @@ export default function App() {
   const [roomLoaded, setRoomLoaded] = useState<boolean>(() => !parseRoomId());
   const [roomError, setRoomError] = useState(false);
 
-  const [activeTab, setActiveTab] = useState<"picks" | "quiz">(() =>
-    new URLSearchParams(window.location.search).get("tab") === "quiz" ? "quiz" : "picks"
-  );
+  // 주소(#/quiz, ?page=quiz, ?tab=quiz, /quiz)를 읽어 초기 서비스 화면 결정
+  type ServiceId = "picks" | "quiz";
+  const detectServiceFromUrl = (): ServiceId => {
+    const hash = window.location.hash.replace(/^#\/?/, "").split("?")[0].trim().toLowerCase();
+    if (hash === "quiz" || hash === "songquiz") return "quiz";
+    if (hash === "picks" || hash === "home") return "picks";
+    const sp = new URLSearchParams(window.location.search);
+    const q = (sp.get("page") || sp.get("tab") || "").toLowerCase();
+    if (q === "quiz" || q === "songquiz") return "quiz";
+    if (/\/(quiz|songquiz)\/?$/i.test(window.location.pathname)) return "quiz";
+    return "picks";
+  };
+
+  const [activeTab, setActiveTab] = useState<ServiceId>(() => detectServiceFromUrl());
+  const [drawerOpen, setDrawerOpen] = useState(false);
+
+  // 서비스 이동 함수: 주소창에 #/quiz 또는 #/picks 를 반영해 고유 링크와 뒤로가기를 지원
+  const navigateService = (target: ServiceId) => {
+    setActiveTab(target);
+    setDrawerOpen(false);
+    const targetHash = target === "quiz" ? "#/quiz" : "#/picks";
+    if (window.location.hash !== targetHash) {
+      window.location.hash = targetHash;
+    }
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  };
+
+  // 브라우저 뒤로가기/앞으로가기 또는 주소 해시 변경 시 화면 동기화
+  useEffect(() => {
+    const onRouteChange = () => {
+      setActiveTab(detectServiceFromUrl());
+      setDrawerOpen(false);
+    };
+    window.addEventListener("hashchange", onRouteChange);
+    window.addEventListener("popstate", onRouteChange);
+    return () => {
+      window.removeEventListener("hashchange", onRouteChange);
+      window.removeEventListener("popstate", onRouteChange);
+    };
+  }, []);
+
+  // ESC 키로 서랍 메뉴 닫기
+  useEffect(() => {
+    if (!drawerOpen) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setDrawerOpen(false);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [drawerOpen]);
   const [showResult, setShowResult] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [lang, setLang] = useState<Lang>(() => detectInitialLang());
@@ -101,8 +148,8 @@ export default function App() {
   // 언어가 바뀌면 <html lang>과 탭 제목도 맞춤
   useEffect(() => {
     document.documentElement.lang = lang;
-    document.title = translate(lang, "appTitle");
-  }, [lang]);
+    document.title = translate(lang, activeTab === "quiz" ? "quizTitle" : "appTitle");
+  }, [lang, activeTab]);
 
   // 주소에 ?lang= 이 실려 왔다면(앱 안 브라우저에서 넘어온 경우) 이 기기의 언어로 저장하고,
   // 공유 링크에 언어가 섞이지 않도록 주소에서 지움
@@ -113,7 +160,7 @@ export default function App() {
     if (fromUrl) saveLocal(LANG_KEY, fromUrl);
     sp.delete("lang");
     const qs = sp.toString();
-    window.history.replaceState({}, "", window.location.pathname + (qs ? `?${qs}` : ""));
+    window.history.replaceState({}, "", window.location.pathname + (qs ? `?${qs}` : "") + window.location.hash);
   }, []);
 
   const [baseAgencies, setBaseAgencies] = useState<Agency[]>([]); // CSV 그대로 (한국어 이름)
@@ -268,7 +315,7 @@ export default function App() {
     sp.delete("pk");
     sp.delete("nk");
     const qs = sp.toString();
-    window.history.replaceState({}, "", window.location.pathname + (qs ? `?${qs}` : ""));
+    window.history.replaceState({}, "", window.location.pathname + (qs ? `?${qs}` : "") + window.location.hash);
   }, [agencies]);
 
   // 방 이름이 바뀌면 '내가 참여한 방' 목록의 이름도 맞춰 둠
@@ -901,35 +948,132 @@ export default function App() {
       </details>
     ) : null;
 
-  const modeTabs = (
-    <div className="mode-tabs" role="tablist">
-      <button
-        type="button"
-        role="tab"
-        aria-selected={activeTab === "picks"}
-        className={activeTab === "picks" ? "active" : ""}
-        onClick={() => setActiveTab("picks")}
-      >
-        {t("tabPicks")}
-      </button>
-      <button
-        type="button"
-        role="tab"
-        aria-selected={activeTab === "quiz"}
-        className={activeTab === "quiz" ? "active" : ""}
-        onClick={() => setActiveTab("quiz")}
-      >
-        {t("tabQuiz")}
-      </button>
-    </div>
+  // 앞으로 새 서비스를 추가할 때 이 배열에 항목만 추가하면 서랍 메뉴와 고유 주소(#/아이디)가 자동으로 표시됩니다.
+  const serviceList: {
+    id: ServiceId;
+    icon: string;
+    title: string;
+    desc: string;
+    hashPath: string;
+  }[] = [
+    {
+      id: "picks",
+      icon: "⭐",
+      title: t("tabPicks").replace(/^⭐\s*/, ""),
+      desc: t("navDescPicks"),
+      hashPath: "#/picks"
+    },
+    {
+      id: "quiz",
+      icon: "🎵",
+      title: t("tabQuiz").replace(/^🎵\s*/, ""),
+      desc: t("navDescQuiz"),
+      hashPath: "#/quiz"
+    }
+  ];
+
+  const currentService = serviceList.find((s) => s.id === activeTab) || serviceList[0];
+
+  const copyCurrentServiceUrl = async () => {
+    const base = window.location.origin + window.location.pathname;
+    const shareUrl =
+      activeTab === "quiz"
+        ? `${base}#/quiz`
+        : roomId
+        ? `${base}?room=${roomId}#/picks`
+        : `${base}#/picks`;
+    const ok = await copyText(shareUrl);
+    alert(ok ? t("navPageUrlCopied", { url: shareUrl }) : t("alertCopyFailed"));
+  };
+
+  const siteHeader = (
+    <>
+      <header className="site-header">
+        <div className="site-header-inner">
+          <div className="site-header-left">
+            <button
+              type="button"
+              className="menu-trigger-btn"
+              aria-expanded={drawerOpen}
+              onClick={() => setDrawerOpen(true)}
+            >
+              <span className="menu-burger-icon" aria-hidden="true">☰</span>
+              <span>{t("navMenuBtn")}</span>
+            </button>
+            <span className="current-service-pill">
+              <span aria-hidden="true">{currentService.icon}</span>
+              <span>{currentService.title}</span>
+            </span>
+          </div>
+          <div className="site-header-right">
+            <button
+              type="button"
+              className="copy-page-url-btn"
+              onClick={copyCurrentServiceUrl}
+              title={t("navCopyPageUrl")}
+            >
+              {t("navCopyPageUrl")}
+            </button>
+            {langSwitch}
+          </div>
+        </div>
+      </header>
+
+      {drawerOpen && (
+        <div
+          className="drawer-backdrop"
+          role="dialog"
+          aria-modal="true"
+          aria-label={t("navDrawerTitle")}
+          onClick={() => setDrawerOpen(false)}
+        >
+          <aside className="service-drawer" onClick={(e) => e.stopPropagation()}>
+            <div className="service-drawer-head">
+              <div>
+                <h2 className="service-drawer-title">{t("navDrawerTitle")}</h2>
+                <p className="service-drawer-sub">{t("navDrawerSub")}</p>
+              </div>
+              <button
+                type="button"
+                className="service-drawer-close"
+                aria-label={t("close")}
+                onClick={() => setDrawerOpen(false)}
+              >
+                ×
+              </button>
+            </div>
+            <nav className="service-drawer-list">
+              {serviceList.map((svc) => {
+                const isActive = svc.id === activeTab;
+                return (
+                  <a
+                    key={svc.id}
+                    href={svc.hashPath}
+                    className={`service-drawer-card ${isActive ? "active" : ""}`}
+                    onClick={(e) => {
+                      e.preventDefault();
+                      navigateService(svc.id);
+                    }}
+                  >
+                    <div className="service-card-top">
+                      <span className="service-card-icon">{svc.icon}</span>
+                      <span className="service-card-name">{svc.title}</span>
+                      <span className="service-card-path">{svc.hashPath}</span>
+                    </div>
+                    <p className="service-card-desc">{svc.desc}</p>
+                  </a>
+                );
+              })}
+            </nav>
+          </aside>
+        </div>
+      )}
+    </>
   );
 
   return (
     <div className="App">
-      <div className="top-nav-row">
-        {modeTabs}
-        {langSwitch}
-      </div>
+      {siteHeader}
       {activeTab === "quiz" ? (
         <SongQuiz agencies={agencies} lang={lang} t={t} />
       ) : !showResult ? (
