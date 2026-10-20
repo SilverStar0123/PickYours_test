@@ -13,10 +13,10 @@ function cleanRow(row: Record<string, any>): Record<string, string> {
   return out;
 }
 
-const stripQuotes = (v: unknown) => String(v ?? "").replace(/['"]/g, "").trim();
+export const stripQuotes = (v: unknown) => String(v ?? "").replace(/['"]/g, "").trim();
 
 // public 폴더의 CSV 파일을 읽어 (키가 정리된) 행 배열로 반환
-function loadCsv(file: string): Promise<Record<string, string>[]> {
+export function loadCsv(file: string): Promise<Record<string, string>[]> {
   return new Promise((resolve, reject) => {
     Papa.parse<Record<string, string>>(`${process.env.PUBLIC_URL || "."}/${file}?${Date.now()}`, {
       download: true,

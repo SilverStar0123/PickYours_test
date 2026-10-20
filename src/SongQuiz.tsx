@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef, useMemo } from "react";
 import type { Lang, MsgKey } from "./i18n";
 import type { Agency } from "./types";
-import { loadCsv, stripQuotes } from "./utils";
+import { loadCsv, stripQuotes } from "./csv";
 import "./quiz.css";
 
 export const SHUFFLE_UNIT_ID = "__shuffle__";
