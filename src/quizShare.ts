@@ -5,27 +5,31 @@ export interface QuizResultInfo {
   correct: number;
   total: number;
   easy: boolean; // true = 초보자 모드, false = 하드 모드
+  score?: number; // 최종 점수 (0~100). 예전 링크에는 없을 수 있음
 }
 
 // X 글에 자동으로 붙일 해시태그 ("#" 없이). 비워 두면 붙이지 않습니다. 예: ["앙스타"]
 export const QUIZ_SHARE_HASHTAGS: string[] = [];
 
-// 공유 링크: 기록이 주소(#/quiz?r=맞힌수-문제수-모드)에 담김. 받은 사람은 설정 화면에서 안내 문구를 봄
+// 공유 링크: 기록이 주소(#/quiz?r=맞힌수-문제수-모드[-점수])에 담김. 받은 사람은 설정 화면에서 안내 문구를 봄
 export function buildQuizShareUrl(r: QuizResultInfo): string {
   const base = `${window.location.origin}${window.location.pathname}`;
-  return `${base}#/quiz?r=${r.correct}-${r.total}-${r.easy ? "e" : "h"}`;
+  const score = typeof r.score === "number" ? `-${Math.max(0, Math.min(100, Math.round(r.score)))}` : "";
+  return `${base}#/quiz?r=${r.correct}-${r.total}-${r.easy ? "e" : "h"}${score}`;
 }
 
 // 주소의 해시에서 친구 기록을 읽음. 형식이 맞지 않거나 말이 안 되는 숫자면 무시(주소는 누구나 고칠 수 있으므로 검증)
 export function parseQuizChallenge(hash: string): QuizResultInfo | null {
   const q = hash.split("?")[1];
   if (!q) return null;
-  const m = /^(\d{1,3})-(\d{1,3})-([eh])$/.exec(new URLSearchParams(q).get("r") || "");
+  const m = /^(\d{1,3})-(\d{1,3})-([eh])(?:-(\d{1,3}))?$/.exec(new URLSearchParams(q).get("r") || "");
   if (!m) return null;
   const correct = Number(m[1]);
   const total = Number(m[2]);
   if (total < 1 || total > 100 || correct > total) return null;
-  return { correct, total, easy: m[3] === "e" };
+  const score = m[4] === undefined ? undefined : Number(m[4]);
+  if (score !== undefined && score > 100) return null;
+  return score === undefined ? { correct, total, easy: m[3] === "e" } : { correct, total, easy: m[3] === "e", score };
 }
 
 // X 글쓰기 창 주소 (공식 Web Intent). 이미지는 이 주소로 첨부할 수 없어서 글과 링크만 채워 줍니다.
@@ -40,6 +44,7 @@ export interface ResultCardText {
   rateLabel: string; // "최종 정답률"
   detail: string; // "총 10문제 중 7문제 정답!"
   modeLabel: string; // "초보자 모드"
+  scoreText: string; // "점수 82점"
   footer: string; // 사이트 주소 등
   percent: number; // 0~100
 }
@@ -184,6 +189,11 @@ export function renderQuizResultBlob(c: ResultCardText): Promise<Blob> {
     ctx.fillText(ln, x0, y);
     y += 52;
   });
+
+  // 점수
+  ctx.fillStyle = "#e8505b";
+  ctx.font = `800 46px ${FONT}`;
+  ctx.fillText(c.scoreText, x0, y + 14, maxW);
 
   // 하단 주소
   ctx.textAlign = "center";

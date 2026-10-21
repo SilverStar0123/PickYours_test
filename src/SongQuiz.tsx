@@ -7,6 +7,7 @@ import ImagePreviewModal from "./components/ImagePreviewModal";
 import { withTimeout, copyText } from "./utils";
 import { triggerDownload, blobToDataUrl } from "./imageExport";
 import { IN_APP_BROWSER } from "./config";
+import { SCORE_RULES, calcQuestionScore, summarizeHistory } from "./quizScore";
 import {
   QUIZ_SHARE_HASHTAGS,
   buildQuizShareUrl,
@@ -35,7 +36,10 @@ export interface SongItem {
 interface HistoryItem {
   song: SongItem;
   correct: boolean;
-  tries: number;
+  tries: number; // 정답 제출까지의 총 시도 횟수 (정답 포함)
+  clipSec: number; // 정답/포기 시점에 설정돼 있던 듣기 길이(초)
+  hint: boolean; // 유닛 힌트를 봤는지
+  score: number; // 이 문제의 점수 (0~100)
 }
 
 interface SongQuizProps {
@@ -152,13 +156,15 @@ function buildResultCardText(
   correct: number,
   total: number,
   easy: boolean,
-  percent: number
+  percent: number,
+  score: number
 ): ResultCardText {
   return {
     title: tt("quizTitle"),
     rateLabel: tt("quizSummaryRateLabel"),
     detail: tt("quizSummaryScoreDetail", { total, correct }),
     modeLabel: easy ? tt("quizModeEasyShort") : tt("quizModeHardShort"),
+    scoreText: tt("quizScoreLine", { score }),
     footer: window.location.host + window.location.pathname.replace(/\/$/, ""),
     percent
   };
@@ -734,7 +740,14 @@ export default function SongQuiz({ agencies, lang, t }: SongQuizProps) {
       setIsPlayingAudio(false);
       setLoadingAudio(false);
       setStatus("correct");
-      setHistory((prev) => [...prev, { song: currentSong, correct: true, tries: nextTries }]);
+      setHistory((prev) => [...prev, {
+          song: currentSong,
+          correct: true,
+          tries: nextTries,
+          clipSec: clipDuration,
+          hint: showUnitHint,
+          score: calcQuestionScore({ correct: true, wrongCount: nextTries - 1, clipSec: clipDuration, hint: showUnitHint })
+        }]);
     } else {
       setWrongShake(true);
       if (wrongTimerRef.current !== null) window.clearTimeout(wrongTimerRef.current);
@@ -750,7 +763,7 @@ export default function SongQuiz({ agencies, lang, t }: SongQuizProps) {
     setIsPlayingAudio(false);
     setLoadingAudio(false);
     setStatus("giveup");
-    setHistory((prev) => [...prev, { song: currentSong, correct: false, tries }]);
+    setHistory((prev) => [...prev, { song: currentSong, correct: false, tries, clipSec: clipDuration, hint: showUnitHint, score: 0 }]);
   };
 
   // 초보자 모드용 자동완성 후보 목록 (입력 전에는 전체 곡, 입력하면 일치하는 곡만 / 정확히 일치 → 앞부분 일치 → 포함 순)
@@ -884,6 +897,8 @@ export default function SongQuiz({ agencies, lang, t }: SongQuizProps) {
   const correctTotal = useMemo(() => history.filter((h) => h.correct).length, [history]);
   const accuracyPercent =
     questionQueue.length > 0 ? Math.round((correctTotal / questionQueue.length) * 100) : 0;
+  const scoreSummary = useMemo(() => summarizeHistory(history, questionQueue.length), [history, questionQueue.length]);
+  const totalScore = scoreSummary.score;
 
   // ───────── 결과 공유 (이미지 저장 · X 글쓰기 · 링크 복사) ─────────
   const [challenge, setChallenge] = useState<QuizResultInfo | null>(() => parseQuizChallenge(window.location.hash));
@@ -913,7 +928,7 @@ export default function SongQuiz({ agencies, lang, t }: SongQuizProps) {
       return;
     }
     let cancelled = false;
-    renderQuizResultBlob(buildResultCardText(tRef.current, correctTotal, questionQueue.length, easyMode, accuracyPercent))
+    renderQuizResultBlob(buildResultCardText(tRef.current, correctTotal, questionQueue.length, easyMode, accuracyPercent, totalScore))
       .then((b) => {
         if (!cancelled) resultBlobRef.current = b;
       })
@@ -923,15 +938,16 @@ export default function SongQuiz({ agencies, lang, t }: SongQuizProps) {
     return () => {
       cancelled = true;
     };
-  }, [phase, questionQueue.length, correctTotal, accuracyPercent, easyMode, lang]);
+  }, [phase, questionQueue.length, correctTotal, accuracyPercent, totalScore, easyMode, lang]);
 
-  const shareUrl = buildQuizShareUrl({ correct: correctTotal, total: questionQueue.length, easy: easyMode });
+  const shareUrl = buildQuizShareUrl({ correct: correctTotal, total: questionQueue.length, easy: easyMode, score: totalScore });
   const tweetText = t("quizShareTweetText", {
     title: t("quizTitle"),
     mode: easyMode ? t("quizModeEasyShort") : t("quizModeHardShort"),
     total: questionQueue.length,
     correct: correctTotal,
-    percent: accuracyPercent
+    percent: accuracyPercent,
+    score: totalScore
   });
   const tweetUrl = buildTweetIntentUrl({ text: tweetText, url: shareUrl, hashtags: QUIZ_SHARE_HASHTAGS });
   const canNativeShare =
@@ -948,7 +964,7 @@ export default function SongQuiz({ agencies, lang, t }: SongQuizProps) {
   const makeResultBlob = async (): Promise<Blob> => {
     if (resultBlobRef.current) return resultBlobRef.current;
     const b = await renderQuizResultBlob(
-      buildResultCardText(t, correctTotal, questionQueue.length, easyMode, accuracyPercent)
+      buildResultCardText(t, correctTotal, questionQueue.length, easyMode, accuracyPercent, totalScore)
     );
     resultBlobRef.current = b;
     return b;
@@ -1065,11 +1081,12 @@ export default function SongQuiz({ agencies, lang, t }: SongQuizProps) {
           {challenge && (
             <div className="sq-challenge" role="note">
               <span>
-                {t("quizChallengeBanner", {
+                {t(challenge.score === undefined ? "quizChallengeBanner" : "quizChallengeBannerScore", {
                   mode: challenge.easy ? t("quizModeEasyShort") : t("quizModeHardShort"),
                   total: challenge.total,
                   correct: challenge.correct,
-                  percent: Math.round((challenge.correct / challenge.total) * 100)
+                  percent: Math.round((challenge.correct / challenge.total) * 100),
+                  score: challenge.score === undefined ? 0 : challenge.score
                 })}
               </span>
               <button type="button" className="sq-challenge-x" aria-label={t("close")} onClick={() => setChallenge(null)}>
@@ -1382,6 +1399,38 @@ export default function SongQuiz({ agencies, lang, t }: SongQuizProps) {
             {t("quizSummaryScoreDetail", { total: questionQueue.length, correct: correctTotal })}
           </p>
 
+          <div className="sq-score-box">
+            <div className="sq-score-main">
+              <span className="sq-score-label">{t("quizScoreLabel")}</span>
+              <b>{totalScore}</b>
+              <span className="sq-score-unit">{t("quizScoreUnit")}</span>
+            </div>
+            <ul className="sq-breakdown">
+              <li>
+                <b>{scoreSummary.perfect}</b>
+                <span>{t("quizBreakdownPerfect")}</span>
+              </li>
+              <li>
+                <b>{scoreSummary.otherCorrect}</b>
+                <span>{t("quizBreakdownOther")}</span>
+              </li>
+              <li>
+                <b>{scoreSummary.giveup}</b>
+                <span>{t("quizBreakdownGiveup")}</span>
+              </li>
+            </ul>
+            <p className="sq-score-rule">
+              {t("quizScoreRule", {
+                base: SCORE_RULES.base,
+                extra: SCORE_RULES.perExtraSecond,
+                wrong: SCORE_RULES.perWrong,
+                cap: SCORE_RULES.wrongCap,
+                hint: SCORE_RULES.hint,
+                min: SCORE_RULES.minCorrect
+              })}
+            </p>
+          </div>
+
           <h3 className="sq-label sq-hist-head">{t("quizSummaryHistoryTitle")}</h3>
           <ul className="sq-history">
             {history.map((item, idx) => (
@@ -1391,9 +1440,15 @@ export default function SongQuiz({ agencies, lang, t }: SongQuizProps) {
                   <div className="sq-hist-title">{formatSongDisplay(item.song)}</div>
                   <div className="sq-hist-unit">{formatFullUnitLabel(item.song)}</div>
                 </div>
-                <span className={`sq-badge ${item.correct ? "ok" : "fail"}`}>
-                  {item.correct ? t("quizSummaryBadgeCorrect", { tries: item.tries }) : t("quizSummaryBadgeGiveup")}
-                </span>
+                <div className="sq-hist-right">
+                  <span className={`sq-badge ${item.correct ? "ok" : "fail"}`}>
+                    {item.correct ? t("quizSummaryBadgeCorrect", { tries: item.tries }) : t("quizSummaryBadgeGiveup")}
+                  </span>
+                  <span className="sq-hist-score">
+                    {item.score}
+                    {t("quizScoreUnit")}
+                  </span>
+                </div>
               </li>
             ))}
           </ul>

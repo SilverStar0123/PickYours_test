@@ -226,10 +226,18 @@ const ko = {
   quizShareImageFail: "이미지를 만들지 못했어요. 잠시 후 다시 시도해주세요.",
   quizShareFailed: "공유 창을 열지 못했어요. 다른 방법을 사용해 주세요.",
   quizShareImageHint: "X 글쓰기 창에는 이미지를 자동으로 붙일 수 없어요. 이미지를 저장한 뒤 직접 첨부해 주세요.",
-  quizShareTweetText: "{title} {mode} - {total}문제 중 {correct}문제 정답! ({percent}%)",
+  quizShareTweetText: "{title} {mode} - {total}문제 중 {correct}문제 정답! ({percent}%) · 점수 {score}점",
   quizChallengeBanner: "친구의 기록: {mode}에서 {total}문제 중 {correct}문제 정답 ({percent}%) - 도전해 보세요!",
   quizModeEasyShort: "초보자 모드",
-  quizModeHardShort: "하드 모드"
+  quizModeHardShort: "하드 모드",
+  quizScoreLabel: "점수",
+  quizScoreUnit: "점",
+  quizScoreLine: "점수 {score}점",
+  quizBreakdownPerfect: "1초 한 번에 정답",
+  quizBreakdownOther: "그 외 정답",
+  quizBreakdownGiveup: "포기",
+  quizScoreRule: "점수 기준: 정답 {base}점에서 시작 · 1초 넘게 들으면 초당 -{extra}점 · 오답 1회당 -{wrong}점(최대 -{cap}점) · 유닛 힌트 -{hint}점 · 정답이면 최소 {min}점 · 포기 0점",
+  quizChallengeBannerScore: "친구의 기록: {mode}에서 총 {total}문제 중 {correct}문제 정답 ({percent}%), 점수 {score}점 - 도전해 보세요!"
 };
 
 export type MsgKey = keyof typeof ko;
@@ -424,10 +432,18 @@ const en: Record<MsgKey, string> = {
   quizShareImageFail: "Could not create the image. Please try again later.",
   quizShareFailed: "Could not open the share sheet. Please try another way.",
   quizShareImageHint: "X cannot attach images automatically. Save the image first, then attach it yourself.",
-  quizShareTweetText: "{title} ({mode}) - {correct}/{total} correct ({percent}%)",
+  quizShareTweetText: "{title} ({mode}) - {correct}/{total} correct ({percent}%) · Score {score}",
   quizChallengeBanner: "A friend scored {correct}/{total} ({percent}%) in {mode}. Think you can beat it?",
   quizModeEasyShort: "Easy mode",
-  quizModeHardShort: "Hard mode"
+  quizModeHardShort: "Hard mode",
+  quizScoreLabel: "Score",
+  quizScoreUnit: " pts",
+  quizScoreLine: "Score: {score} pts",
+  quizBreakdownPerfect: "Perfect (1s, first try)",
+  quizBreakdownOther: "Other correct",
+  quizBreakdownGiveup: "Gave up",
+  quizScoreRule: "Scoring: each correct answer starts at {base} · -{extra} per extra second of audio · -{wrong} per wrong guess (max -{cap}) · -{hint} for the unit hint · at least {min} if correct · 0 if given up",
+  quizChallengeBannerScore: "A friend scored {correct}/{total} ({percent}%), {score} pts in {mode}. Think you can beat it?"
 };
 
 const ja: Record<MsgKey, string> = {
@@ -620,10 +636,18 @@ const ja: Record<MsgKey, string> = {
   quizShareImageFail: "画像を作成できませんでした。しばらくしてからもう一度お試しください。",
   quizShareFailed: "共有画面を開けませんでした。別の方法をお試しください。",
   quizShareImageHint: "Xの投稿画面には画像を自動で添付できません。画像を保存してから添付してください。",
-  quizShareTweetText: "{title}（{mode}）- {total}問中{correct}問正解！（{percent}%）",
+  quizShareTweetText: "{title}（{mode}）- {total}問中{correct}問正解！（{percent}%）· スコア{score}点",
   quizChallengeBanner: "友だちの記録：{mode}で{total}問中{correct}問正解（{percent}%）- 挑戦してみよう！",
   quizModeEasyShort: "ビギナーモード",
-  quizModeHardShort: "ハードモード"
+  quizModeHardShort: "ハードモード",
+  quizScoreLabel: "スコア",
+  quizScoreUnit: "点",
+  quizScoreLine: "スコア {score}点",
+  quizBreakdownPerfect: "1秒・一発正解",
+  quizBreakdownOther: "その他の正解",
+  quizBreakdownGiveup: "ギブアップ",
+  quizScoreRule: "採点：正解で{base}点から開始 ・ 1秒を超えるごとに-{extra}点 ・ 不正解1回につき-{wrong}点（最大-{cap}点） ・ ユニットヒント-{hint}点 ・ 正解なら最低{min}点 ・ ギブアップは0点",
+  quizChallengeBannerScore: "友だちの記録：{mode}で{total}問中{correct}問正解（{percent}%）、スコア{score}点 - 挑戦してみよう！"
 };
 
 const MESSAGES: Record<Lang, Record<MsgKey, string>> = { ko, en, ja };
