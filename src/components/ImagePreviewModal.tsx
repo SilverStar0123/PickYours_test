@@ -14,7 +14,7 @@ export default function ImagePreviewModal({
   t: TFn;
   onClose: () => void;
   onShare: () => void;
-  onOpenExternal: () => void;
+  onOpenExternal?: () => void; // 없으면 버튼을 숨김
   onCopyUrl: () => void;
 }) {
   return (
@@ -32,9 +32,11 @@ export default function ImagePreviewModal({
                 {t("previewShare")}
               </button>
             )}
-          <button type="button" className="download-btn" onClick={onOpenExternal}>
-            {t("previewOpenExternal")}
-          </button>
+          {onOpenExternal && (
+            <button type="button" className="download-btn" onClick={onOpenExternal}>
+              {t("previewOpenExternal")}
+            </button>
+          )}
           <button type="button" className="download-btn" onClick={onCopyUrl}>
             {t("previewCopyUrl")}
           </button>
