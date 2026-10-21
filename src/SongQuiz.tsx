@@ -3,6 +3,18 @@ import type { Lang, MsgKey } from "./i18n";
 import type { Agency } from "./types";
 import { loadCsv, stripQuotes } from "./csv";
 import "./quiz.css";
+import ImagePreviewModal from "./components/ImagePreviewModal";
+import { withTimeout, copyText } from "./utils";
+import { triggerDownload, blobToDataUrl } from "./imageExport";
+import { IN_APP_BROWSER } from "./config";
+import {
+  QUIZ_SHARE_HASHTAGS,
+  buildQuizShareUrl,
+  buildTweetIntentUrl,
+  parseQuizChallenge,
+  renderQuizResultBlob
+} from "./quizShare";
+import type { QuizResultInfo, ResultCardText } from "./quizShare";
 
 export const SHUFFLE_UNIT_ID = "__shuffle__";
 
@@ -132,6 +144,24 @@ function loadYouTubeApi(): Promise<any> {
     giveUp = window.setTimeout(() => finish(false), 12000);
   });
   return ytApiPromise;
+}
+
+// 결과 이미지에 들어갈 글
+function buildResultCardText(
+  tt: SongQuizProps["t"],
+  correct: number,
+  total: number,
+  easy: boolean,
+  percent: number
+): ResultCardText {
+  return {
+    title: tt("quizTitle"),
+    rateLabel: tt("quizSummaryRateLabel"),
+    detail: tt("quizSummaryScoreDetail", { total, correct }),
+    modeLabel: easy ? tt("quizModeEasyShort") : tt("quizModeHardShort"),
+    footer: window.location.host + window.location.pathname.replace(/\/$/, ""),
+    percent
+  };
 }
 
 // 현재 언어에 맞는 대표 제목 / 입력칸에 채워 넣을 제목
@@ -855,6 +885,133 @@ export default function SongQuiz({ agencies, lang, t }: SongQuizProps) {
   const accuracyPercent =
     questionQueue.length > 0 ? Math.round((correctTotal / questionQueue.length) * 100) : 0;
 
+  // ───────── 결과 공유 (이미지 저장 · X 글쓰기 · 링크 복사) ─────────
+  const [challenge, setChallenge] = useState<QuizResultInfo | null>(() => parseQuizChallenge(window.location.hash));
+  const [sharePreview, setSharePreview] = useState<{ src: string; blob: Blob; name: string } | null>(null);
+  const [shareBusy, setShareBusy] = useState(false);
+  const [copied, setCopied] = useState(false);
+  const copiedTimerRef = useRef<number | null>(null);
+  const resultBlobRef = useRef<Blob | null>(null); // 결과 화면이 뜨면 미리 만들어 둠 (공유 창은 클릭 직후에 열어야 해서)
+
+  // 공유 링크로 들어왔다면 친구 기록은 화면에 안내만 하고 주소에서는 지움 (이 주소를 다시 공유해도 남의 기록이 따라가지 않게)
+  useEffect(() => {
+    if (parseQuizChallenge(window.location.hash)) {
+      window.history.replaceState(null, "", window.location.pathname + window.location.search + "#/quiz");
+    }
+  }, []);
+
+  useEffect(() => {
+    return () => {
+      if (copiedTimerRef.current !== null) window.clearTimeout(copiedTimerRef.current);
+    };
+  }, []);
+
+  // 결과 화면이 뜨면 이미지를 미리 그려 둠
+  useEffect(() => {
+    if (phase !== "summary") {
+      resultBlobRef.current = null;
+      return;
+    }
+    let cancelled = false;
+    renderQuizResultBlob(buildResultCardText(tRef.current, correctTotal, questionQueue.length, easyMode, accuracyPercent))
+      .then((b) => {
+        if (!cancelled) resultBlobRef.current = b;
+      })
+      .catch(() => {
+        /* 저장 버튼을 누를 때 다시 시도 */
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [phase, questionQueue.length, correctTotal, accuracyPercent, easyMode, lang]);
+
+  const shareUrl = buildQuizShareUrl({ correct: correctTotal, total: questionQueue.length, easy: easyMode });
+  const tweetText = t("quizShareTweetText", {
+    title: t("quizTitle"),
+    mode: easyMode ? t("quizModeEasyShort") : t("quizModeHardShort"),
+    total: questionQueue.length,
+    correct: correctTotal,
+    percent: accuracyPercent
+  });
+  const tweetUrl = buildTweetIntentUrl({ text: tweetText, url: shareUrl, hashtags: QUIZ_SHARE_HASHTAGS });
+  const canNativeShare =
+    phase === "summary" &&
+    typeof navigator.canShare === "function" &&
+    (() => {
+      try {
+        return navigator.canShare({ files: [new File([new Blob()], "x.png", { type: "image/png" })] });
+      } catch {
+        return false;
+      }
+    })();
+
+  const makeResultBlob = async (): Promise<Blob> => {
+    if (resultBlobRef.current) return resultBlobRef.current;
+    const b = await renderQuizResultBlob(
+      buildResultCardText(t, correctTotal, questionQueue.length, easyMode, accuracyPercent)
+    );
+    resultBlobRef.current = b;
+    return b;
+  };
+
+  // 결과 이미지 저장 (앱 안 브라우저처럼 다운로드가 막힌 곳이면 미리보기 창)
+  const handleSaveResultImage = async () => {
+    if (shareBusy) return;
+    setShareBusy(true);
+    try {
+      const blob = await withTimeout(makeResultBlob(), 15000);
+      const name = "song-quiz-result.png";
+      if (!IN_APP_BROWSER.test(navigator.userAgent) && triggerDownload(blob, name)) return;
+      setSharePreview({ src: await blobToDataUrl(blob), blob, name });
+    } catch {
+      alert(t("quizShareImageFail"));
+    } finally {
+      setShareBusy(false);
+    }
+  };
+
+  const handleCopyLink = async (notify = false) => {
+    const ok = await copyText(shareUrl);
+    if (!ok) {
+      alert(t("quizShareCopyFail"));
+      return;
+    }
+    if (notify) {
+      alert(t("quizShareCopied"));
+      return;
+    }
+    setCopied(true);
+    if (copiedTimerRef.current !== null) window.clearTimeout(copiedTimerRef.current);
+    copiedTimerRef.current = window.setTimeout(() => setCopied(false), 2000);
+  };
+
+  // 휴대폰의 공유 창으로 이미지와 글을 함께 보냄 (X 앱 등을 고를 수 있음)
+  const shareFile = async (blob: Blob) => {
+    try {
+      await navigator.share({
+        files: [new File([blob], "song-quiz-result.png", { type: "image/png" })],
+        text: tweetText,
+        url: shareUrl
+      });
+    } catch (e) {
+      if ((e as Error)?.name !== "AbortError") alert(t("quizShareFailed"));
+    }
+  };
+  const handleNativeShare = async () => {
+    if (resultBlobRef.current) {
+      await shareFile(resultBlobRef.current);
+      return;
+    }
+    setShareBusy(true);
+    try {
+      await shareFile(await makeResultBlob());
+    } catch {
+      alert(t("quizShareImageFail"));
+    } finally {
+      setShareBusy(false);
+    }
+  };
+
   const currentSongId = currentSong ? currentSong.id : "";
 
   // 후보가 바뀌면 맨 위 항목부터 선택
@@ -905,6 +1062,21 @@ export default function SongQuiz({ agencies, lang, t }: SongQuizProps) {
       {/* ───────── 1. 설정 ───────── */}
       {phase === "setup" && (
         <section className="sq-card sq-setup">
+          {challenge && (
+            <div className="sq-challenge" role="note">
+              <span>
+                {t("quizChallengeBanner", {
+                  mode: challenge.easy ? t("quizModeEasyShort") : t("quizModeHardShort"),
+                  total: challenge.total,
+                  correct: challenge.correct,
+                  percent: Math.round((challenge.correct / challenge.total) * 100)
+                })}
+              </span>
+              <button type="button" className="sq-challenge-x" aria-label={t("close")} onClick={() => setChallenge(null)}>
+                ×
+              </button>
+            </div>
+          )}
           {csvError && <p className="sq-alert">{t("quizLoadFail")}</p>}
 
           <div className="sq-field">
@@ -1226,6 +1398,30 @@ export default function SongQuiz({ agencies, lang, t }: SongQuizProps) {
             ))}
           </ul>
 
+          <div className="sq-share">
+            <h3 className="sq-label">{t("quizShareHeading")}</h3>
+            <div className="sq-share-grid">
+              <a className="sq-share-btn sq-share-x" href={tweetUrl} target="_blank" rel="noopener noreferrer">
+                <svg viewBox="0 0 24 24" aria-hidden="true">
+                  <path d="M18.901 1.153h3.68l-8.04 9.19L24 22.846h-7.406l-5.8-7.584-6.638 7.584H.474l8.6-9.83L0 1.154h7.594l5.243 6.932ZM17.61 20.644h2.039L6.486 3.24H4.298Z" />
+                </svg>
+                {t("quizShareX")}
+              </a>
+              <button type="button" className="sq-share-btn" disabled={shareBusy} onClick={handleSaveResultImage}>
+                {t("quizShareSaveImage")}
+              </button>
+              <button type="button" className="sq-share-btn" onClick={() => handleCopyLink()}>
+                {copied ? t("quizShareCopied") : t("quizShareCopyLink")}
+              </button>
+              {canNativeShare && (
+                <button type="button" className="sq-share-btn sq-share-wide" disabled={shareBusy} onClick={handleNativeShare}>
+                  {t("quizShareNative")}
+                </button>
+              )}
+            </div>
+            <p className="sq-share-note">{t("quizShareImageHint")}</p>
+          </div>
+
           <div className="sq-actions">
             <button type="button" className="sq-start" onClick={handleStartQuiz}>
               {t("quizRetrySameBtn")}
@@ -1235,6 +1431,16 @@ export default function SongQuiz({ agencies, lang, t }: SongQuizProps) {
             </button>
           </div>
         </section>
+      )}
+
+      {sharePreview && (
+        <ImagePreviewModal
+          preview={sharePreview}
+          t={t}
+          onClose={() => setSharePreview(null)}
+          onShare={() => shareFile(sharePreview.blob)}
+          onCopyUrl={() => handleCopyLink(true)}
+        />
       )}
 
       {showDevTools && (

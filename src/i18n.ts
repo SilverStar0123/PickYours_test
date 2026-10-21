@@ -215,7 +215,21 @@ const ko = {
   quizInvalidUrl: "올바른 유튜브 또는 유튜브 뮤직 링크를 입력해주세요.",
   quizCustomDefaultTitle: "유튜브 테스트 곡",
   quizCustomUnit: "직접 입력 테스트",
-  quizLoadFail: "곡 목록을 불러오지 못했어요. 잠시 후 다시 시도해주세요."
+  quizLoadFail: "곡 목록을 불러오지 못했어요. 잠시 후 다시 시도해주세요.",
+  quizShareHeading: "결과 공유하기",
+  quizShareX: "X에 공유하기",
+  quizShareSaveImage: "결과 이미지 저장",
+  quizShareNative: "이미지와 함께 공유",
+  quizShareCopyLink: "링크 복사",
+  quizShareCopied: "복사됨 ✓",
+  quizShareCopyFail: "복사에 실패했어요. 주소창의 링크를 직접 복사해주세요.",
+  quizShareImageFail: "이미지를 만들지 못했어요. 잠시 후 다시 시도해주세요.",
+  quizShareFailed: "공유 창을 열지 못했어요. 다른 방법을 사용해 주세요.",
+  quizShareImageHint: "X 글쓰기 창에는 이미지를 자동으로 붙일 수 없어요. 이미지를 저장한 뒤 직접 첨부해 주세요.",
+  quizShareTweetText: "{title} {mode} - {total}문제 중 {correct}문제 정답! ({percent}%)",
+  quizChallengeBanner: "친구의 기록: {mode}에서 {total}문제 중 {correct}문제 정답 ({percent}%) - 도전해 보세요!",
+  quizModeEasyShort: "초보자 모드",
+  quizModeHardShort: "하드 모드"
 };
 
 export type MsgKey = keyof typeof ko;
@@ -399,7 +413,21 @@ const en: Record<MsgKey, string> = {
   quizInvalidUrl: "Please enter a valid YouTube or YouTube Music link.",
   quizCustomDefaultTitle: "YouTube test song",
   quizCustomUnit: "Custom test",
-  quizLoadFail: "Could not load the song list. Please try again later."
+  quizLoadFail: "Could not load the song list. Please try again later.",
+  quizShareHeading: "Share your result",
+  quizShareX: "Share on X",
+  quizShareSaveImage: "Save result image",
+  quizShareNative: "Share with image",
+  quizShareCopyLink: "Copy link",
+  quizShareCopied: "Copied ✓",
+  quizShareCopyFail: "Copy failed. Please copy the link from the address bar.",
+  quizShareImageFail: "Could not create the image. Please try again later.",
+  quizShareFailed: "Could not open the share sheet. Please try another way.",
+  quizShareImageHint: "X cannot attach images automatically. Save the image first, then attach it yourself.",
+  quizShareTweetText: "{title} ({mode}) - {correct}/{total} correct ({percent}%)",
+  quizChallengeBanner: "A friend scored {correct}/{total} ({percent}%) in {mode}. Think you can beat it?",
+  quizModeEasyShort: "Easy mode",
+  quizModeHardShort: "Hard mode"
 };
 
 const ja: Record<MsgKey, string> = {
@@ -581,7 +609,21 @@ const ja: Record<MsgKey, string> = {
   quizInvalidUrl: "有効なYouTubeまたはYouTube Musicのリンクを入力してください。",
   quizCustomDefaultTitle: "YouTubeテスト曲",
   quizCustomUnit: "直接入力テスト",
-  quizLoadFail: "曲リストを読み込めませんでした。しばらくしてからもう一度お試しください。"
+  quizLoadFail: "曲リストを読み込めませんでした。しばらくしてからもう一度お試しください。",
+  quizShareHeading: "結果をシェア",
+  quizShareX: "Xでシェア",
+  quizShareSaveImage: "結果画像を保存",
+  quizShareNative: "画像付きでシェア",
+  quizShareCopyLink: "リンクをコピー",
+  quizShareCopied: "コピーしました ✓",
+  quizShareCopyFail: "コピーに失敗しました。アドレスバーのリンクを直接コピーしてください。",
+  quizShareImageFail: "画像を作成できませんでした。しばらくしてからもう一度お試しください。",
+  quizShareFailed: "共有画面を開けませんでした。別の方法をお試しください。",
+  quizShareImageHint: "Xの投稿画面には画像を自動で添付できません。画像を保存してから添付してください。",
+  quizShareTweetText: "{title}（{mode}）- {total}問中{correct}問正解！（{percent}%）",
+  quizChallengeBanner: "友だちの記録：{mode}で{total}問中{correct}問正解（{percent}%）- 挑戦してみよう！",
+  quizModeEasyShort: "ビギナーモード",
+  quizModeHardShort: "ハードモード"
 };
 
 const MESSAGES: Record<Lang, Record<MsgKey, string>> = { ko, en, ja };

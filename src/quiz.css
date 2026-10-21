@@ -708,6 +708,105 @@
   margin-top: 0;
 }
 
+/* 결과 공유 */
+.sq-share {
+  margin-top: 26px;
+  padding-top: 22px;
+  border-top: 1px dashed var(--sq-line);
+  text-align: left;
+}
+.sq-share .sq-label {
+  margin-bottom: 12px;
+}
+.sq-share-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+.sq-share-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-height: 50px;
+  padding: 0 12px;
+  background: #fff;
+  border: 1.5px solid var(--sq-line);
+  border-radius: 14px;
+  color: var(--sq-ink);
+  font-size: 0.93rem;
+  font-weight: 700;
+  text-decoration: none;
+  cursor: pointer;
+}
+.sq-share-btn:hover:not(:disabled) {
+  border-color: #ffb3b3;
+}
+.sq-share-btn:disabled {
+  opacity: 0.6;
+  cursor: wait;
+}
+.sq-share-x,
+.sq-share-wide {
+  grid-column: 1 / -1;
+}
+.sq-share-x {
+  min-height: 54px;
+  background: #0f1419;
+  border-color: #0f1419;
+  color: #fff;
+  font-size: 1rem;
+}
+.sq-share-x:hover {
+  background: #272c32;
+  border-color: #272c32 !important;
+}
+.sq-share-x svg {
+  width: 18px;
+  height: 18px;
+  fill: currentColor;
+}
+.sq-share-note {
+  margin: 10px 2px 0;
+  color: var(--sq-muted);
+  font-size: 0.8rem;
+  line-height: 1.5;
+}
+
+/* 친구 기록 안내 (공유 링크로 들어왔을 때) */
+.sq-challenge {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  margin-bottom: 20px;
+  padding: 12px 14px;
+  background: #fff9db;
+  border: 1px solid #ffe066;
+  border-radius: 12px;
+  color: #6f5600;
+  font-size: 0.92rem;
+  font-weight: 600;
+  line-height: 1.5;
+}
+.sq-challenge span {
+  flex: 1;
+}
+.sq-challenge-x {
+  flex: none;
+  width: 28px;
+  height: 28px;
+  background: none;
+  border: none;
+  border-radius: 50%;
+  color: #8a6d00;
+  font-size: 1.3rem;
+  line-height: 1;
+  cursor: pointer;
+}
+.sq-challenge-x:hover {
+  background: rgba(0, 0, 0, 0.06);
+}
+
 /* 개발용 테스트 패널 */
 .sq-dev {
   margin-top: 8px;
