@@ -237,7 +237,11 @@ const ko = {
   quizBreakdownOther: "그 외 정답",
   quizBreakdownGiveup: "포기",
   quizScoreRule: "점수 기준: 정답 {base}점에서 시작 · 1초 넘게 들으면 초당 -{extra}점 · 오답 1회당 -{wrong}점(최대 -{cap}점) · 유닛 힌트 -{hint}점 · 정답이면 최소 {min}점 · 포기 0점",
-  quizChallengeBannerScore: "친구의 기록: {mode}에서 총 {total}문제 중 {correct}문제 정답 ({percent}%), 점수 {score}점 - 도전해 보세요!"
+  quizChallengeBannerScore: "친구의 기록: {mode}에서 총 {total}문제 중 {correct}문제 정답 ({percent}%), 점수 {score}점 - 도전해 보세요!",
+  quizStreak: "🔥 {n}연속 정답!",
+  quizHistorySortNote: "점수 높은 순",
+  quizHistoryMore: "나머지 {n}곡 보기",
+  quizHistoryLess: "접기"
 };
 
 export type MsgKey = keyof typeof ko;
@@ -443,7 +447,11 @@ const en: Record<MsgKey, string> = {
   quizBreakdownOther: "Other correct",
   quizBreakdownGiveup: "Gave up",
   quizScoreRule: "Scoring: each correct answer starts at {base} · -{extra} per extra second of audio · -{wrong} per wrong guess (max -{cap}) · -{hint} for the unit hint · at least {min} if correct · 0 if given up",
-  quizChallengeBannerScore: "A friend scored {correct}/{total} ({percent}%), {score} pts in {mode}. Think you can beat it?"
+  quizChallengeBannerScore: "A friend scored {correct}/{total} ({percent}%), {score} pts in {mode}. Think you can beat it?",
+  quizStreak: "🔥 {n} in a row!",
+  quizHistorySortNote: "Highest score first",
+  quizHistoryMore: "Show {n} more",
+  quizHistoryLess: "Show less"
 };
 
 const ja: Record<MsgKey, string> = {
@@ -647,7 +655,11 @@ const ja: Record<MsgKey, string> = {
   quizBreakdownOther: "その他の正解",
   quizBreakdownGiveup: "ギブアップ",
   quizScoreRule: "採点：正解で{base}点から開始 ・ 1秒を超えるごとに-{extra}点 ・ 不正解1回につき-{wrong}点（最大-{cap}点） ・ ユニットヒント-{hint}点 ・ 正解なら最低{min}点 ・ ギブアップは0点",
-  quizChallengeBannerScore: "友だちの記録：{mode}で{total}問中{correct}問正解（{percent}%）、スコア{score}点 - 挑戦してみよう！"
+  quizChallengeBannerScore: "友だちの記録：{mode}で{total}問中{correct}問正解（{percent}%）、スコア{score}点 - 挑戦してみよう！",
+  quizStreak: "🔥 {n}連続正解！",
+  quizHistorySortNote: "スコアが高い順",
+  quizHistoryMore: "残り{n}曲を表示",
+  quizHistoryLess: "閉じる"
 };
 
 const MESSAGES: Record<Lang, Record<MsgKey, string>> = { ko, en, ja };

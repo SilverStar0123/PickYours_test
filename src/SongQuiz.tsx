@@ -7,7 +7,7 @@ import ImagePreviewModal from "./components/ImagePreviewModal";
 import { withTimeout, copyText } from "./utils";
 import { triggerDownload, blobToDataUrl } from "./imageExport";
 import { IN_APP_BROWSER } from "./config";
-import { SCORE_RULES, calcQuestionScore, summarizeHistory } from "./quizScore";
+import { calcQuestionScore, summarizeHistory } from "./quizScore";
 import {
   QUIZ_SHARE_HASHTAGS,
   buildQuizShareUrl,
@@ -149,6 +149,27 @@ function loadYouTubeApi(): Promise<any> {
   });
   return ytApiPromise;
 }
+
+// 정답 직후 터지는 색종이 조각 (dx: 좌우로 퍼지는 거리, up: 위로 솟는 높이, rot: 회전, d: 시작 지연)
+const CONFETTI = [
+  { dx: -130, up: 80, rot: -320, c: "#ff6b6b", d: 0 },
+  { dx: -96, up: 120, rot: 250, c: "#ffd43b", d: 0.03 },
+  { dx: -64, up: 96, rot: -180, c: "#12b886", d: 0.01 },
+  { dx: -34, up: 132, rot: 300, c: "#4dabf7", d: 0.05 },
+  { dx: -12, up: 108, rot: -260, c: "#b197fc", d: 0.02 },
+  { dx: 12, up: 128, rot: 220, c: "#ff922b", d: 0.04 },
+  { dx: 34, up: 104, rot: -300, c: "#ff6b6b", d: 0 },
+  { dx: 64, up: 136, rot: 180, c: "#12b886", d: 0.06 },
+  { dx: 96, up: 92, rot: -240, c: "#ffd43b", d: 0.02 },
+  { dx: 130, up: 84, rot: 340, c: "#4dabf7", d: 0.03 },
+  { dx: -110, up: 52, rot: 200, c: "#b197fc", d: 0.07 },
+  { dx: 110, up: 56, rot: -210, c: "#ff922b", d: 0.08 },
+  { dx: -48, up: 70, rot: 280, c: "#ff6b6b", d: 0.09 },
+  { dx: 48, up: 74, rot: -270, c: "#12b886", d: 0.1 }
+];
+
+// 결과 화면에서 처음 보여 줄 곡 수 (나머지는 접어 둠)
+const HISTORY_TOP_N = 5;
 
 // 결과 이미지에 들어갈 글
 function buildResultCardText(
@@ -906,6 +927,24 @@ export default function SongQuiz({ agencies, lang, t }: SongQuizProps) {
   const [shareBusy, setShareBusy] = useState(false);
   const [copied, setCopied] = useState(false);
   const copiedTimerRef = useRef<number | null>(null);
+  const [showAllHistory, setShowAllHistory] = useState(false);
+
+  // 결과 화면이 열릴 때마다 목록은 접힌 상태로 시작
+  useEffect(() => {
+    if (phase === "summary") setShowAllHistory(false);
+  }, [phase]);
+
+  // 기록은 점수 높은 순(같으면 먼저 푼 순)으로 보여 줌. 번호는 원래 문제 번호 그대로
+  const rankedHistory = useMemo(
+    () => history.map((item, idx) => ({ item, idx })).sort((a, b) => b.item.score - a.item.score || a.idx - b.idx),
+    [history]
+  );
+  const visibleHistory = showAllHistory ? rankedHistory : rankedHistory.slice(0, HISTORY_TOP_N);
+  const hiddenHistoryCount = Math.max(0, rankedHistory.length - HISTORY_TOP_N);
+
+  // 지금까지 연속으로 맞힌 문제 수 (정답 직후 연출용)
+  let streak = 0;
+  for (let i = history.length - 1; i >= 0 && history[i].correct; i--) streak += 1;
   const resultBlobRef = useRef<Blob | null>(null); // 결과 화면이 뜨면 미리 만들어 둠 (공유 창은 클릭 직후에 열어야 해서)
 
   // 공유 링크로 들어왔다면 친구 기록은 화면에 안내만 하고 주소에서는 지움 (이 주소를 다시 공유해도 남의 기록이 따라가지 않게)
@@ -1352,10 +1391,27 @@ export default function SongQuiz({ agencies, lang, t }: SongQuizProps) {
           <div className={`sq-result ${status}`} role="status" aria-live="polite">
             {status === "correct" ? (
               <>
+                <div className="sq-confetti" aria-hidden="true">
+                  {CONFETTI.map((c, i) => (
+                    <i
+                      key={i}
+                      style={
+                        {
+                          "--dx": `${c.dx}px`,
+                          "--up": `${c.up}px`,
+                          "--rot": `${c.rot}deg`,
+                          "--c": c.c,
+                          "--d": `${c.d}s`
+                        } as React.CSSProperties
+                      }
+                    />
+                  ))}
+                </div>
                 <div className="sq-check" aria-hidden="true">
                   ✓
                 </div>
                 <h3 className="sq-result-title">{t("quizCorrectClean")}</h3>
+                {streak >= 2 && <p className="sq-streak">{t("quizStreak", { n: streak })}</p>}
               </>
             ) : (
               <>
@@ -1419,21 +1475,14 @@ export default function SongQuiz({ agencies, lang, t }: SongQuizProps) {
                 <span>{t("quizBreakdownGiveup")}</span>
               </li>
             </ul>
-            <p className="sq-score-rule">
-              {t("quizScoreRule", {
-                base: SCORE_RULES.base,
-                extra: SCORE_RULES.perExtraSecond,
-                wrong: SCORE_RULES.perWrong,
-                cap: SCORE_RULES.wrongCap,
-                hint: SCORE_RULES.hint,
-                min: SCORE_RULES.minCorrect
-              })}
-            </p>
           </div>
 
-          <h3 className="sq-label sq-hist-head">{t("quizSummaryHistoryTitle")}</h3>
-          <ul className="sq-history">
-            {history.map((item, idx) => (
+          <h3 className="sq-label sq-hist-head">
+            {t("quizSummaryHistoryTitle")}
+            <small className="sq-hist-sort">{t("quizHistorySortNote")}</small>
+          </h3>
+          <ul className="sq-history" id="sq-history-list">
+            {visibleHistory.map(({ item, idx }) => (
               <li key={`${item.song.id}-${idx}`} className={item.correct ? "ok" : "fail"}>
                 <span className="sq-hist-num">{idx + 1}</span>
                 <div className="sq-hist-info">
@@ -1452,6 +1501,20 @@ export default function SongQuiz({ agencies, lang, t }: SongQuizProps) {
               </li>
             ))}
           </ul>
+          {hiddenHistoryCount > 0 && (
+            <button
+              type="button"
+              className={`sq-history-toggle${showAllHistory ? " is-open" : ""}`}
+              aria-expanded={showAllHistory}
+              aria-controls="sq-history-list"
+              onClick={() => setShowAllHistory((v) => !v)}
+            >
+              {showAllHistory ? t("quizHistoryLess") : t("quizHistoryMore", { n: hiddenHistoryCount })}
+              <span className="chev" aria-hidden="true">
+                ▾
+              </span>
+            </button>
+          )}
 
           <div className="sq-share">
             <h3 className="sq-label">{t("quizShareHeading")}</h3>
