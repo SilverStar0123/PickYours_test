@@ -15,7 +15,7 @@ import {
   parseQuizChallenge,
   renderQuizResultBlob
 } from "./quizShare";
-import type { QuizResultInfo, ResultCardText } from "./quizShare";
+import type { QuizResultInfo, ResultCardText, TopSongLine } from "./quizShare";
 
 export const SHUFFLE_UNIT_ID = "__shuffle__";
 
@@ -40,6 +40,7 @@ interface HistoryItem {
   clipSec: number; // 정답/포기 시점에 설정돼 있던 듣기 길이(초)
   hint: boolean; // 유닛 힌트를 봤는지
   score: number; // 이 문제의 점수 (0~100)
+  listens: number; // 이 문제에서 구간을 재생한 총 횟수 (같은 구간 반복 포함)
 }
 
 interface SongQuizProps {
@@ -178,14 +179,28 @@ function buildResultCardText(
   total: number,
   easy: boolean,
   percent: number,
-  score: number
+  score: number,
+  ranked: { item: HistoryItem; idx: number }[],
+  lang: Lang
 ): ResultCardText {
+  // 점수 높은 정답 곡 3개 (포기한 곡은 제외)
+  const top: TopSongLine[] = ranked
+    .filter((x) => x.item.correct)
+    .slice(0, 3)
+    .map((x, i) => ({
+      rank: i + 1,
+      title: primaryTitle(x.item.song, lang),
+      meta: tt("quizSongMeta", { sec: x.item.clipSec, listens: x.item.listens, tries: x.item.tries }),
+      score: `${x.item.score}${tt("quizScoreUnit")}`
+    }));
   return {
     title: tt("quizTitle"),
     rateLabel: tt("quizSummaryRateLabel"),
     detail: tt("quizSummaryScoreDetail", { total, correct }),
     modeLabel: easy ? tt("quizModeEasyShort") : tt("quizModeHardShort"),
     scoreText: tt("quizScoreLine", { score }),
+    topTitle: tt("quizShareTop3Title"),
+    top,
     footer: window.location.host + window.location.pathname.replace(/\/$/, ""),
     percent
   };
@@ -283,11 +298,13 @@ export default function SongQuiz({ agencies, lang, t }: SongQuizProps) {
   const [showUnitHint, setShowUnitHint] = useState(false);
   const [guess, setGuess] = useState("");
   const [showSuggestions, setShowSuggestions] = useState(false);
+  const [listenCount, setListenCount] = useState(0); // 이 문제에서 들은 횟수
   const [activeIdx, setActiveIdx] = useState(0); // 자동완성 목록에서 방향키로 고른 항목
   const inputRef = useRef<HTMLInputElement>(null);
   const listRef = useRef<HTMLUListElement>(null);
   const nextBtnRef = useRef<HTMLButtonElement>(null);
   const wrongTimerRef = useRef<number | null>(null);
+  const listenCountedRef = useRef(false);
   const playReqRef = useRef(0); // 재생 요청 번호 (연속 클릭 시 마지막 요청만 실행)
   const loadedVideoIdRef = useRef<string>(""); // 플레이어에 실제로 올라가 있는 영상
 
@@ -470,6 +487,7 @@ export default function SongQuiz({ agencies, lang, t }: SongQuizProps) {
   // 플레이어를 만들거나(첫 실행) 이미 있으면 해당 영상을 재생
   const ensurePlayerAndPlay = async (videoId: string, targetStart: number, durSec: number) => {
     const reqId = ++playReqRef.current; // 연속으로 눌러도 가장 마지막 요청만 실행
+    listenCountedRef.current = false; // 이 요청에서 실제로 재생이 시작되면 한 번만 횟수에 더함
     clearTimers();
     setPlayerError(false);
     clipDurationRef.current = durSec;
@@ -570,6 +588,10 @@ export default function SongQuiz({ agencies, lang, t }: SongQuizProps) {
         },
         onStateChange: (event: any) => {
           if (event.data === 1) {
+            if (pendingPlayRef.current && !listenCountedRef.current) {
+              listenCountedRef.current = true;
+              setListenCount((c) => c + 1);
+            }
             if (loadWatchdogRef.current !== null) {
               window.clearTimeout(loadWatchdogRef.current);
               loadWatchdogRef.current = null;
@@ -655,6 +677,7 @@ export default function SongQuiz({ agencies, lang, t }: SongQuizProps) {
     setClipDuration(1);
     setStartSec(initialStart);
     setTries(0);
+    setListenCount(0);
     setStatus("playing");
     setShowUnitHint(false);
     setGuess("");
@@ -767,7 +790,14 @@ export default function SongQuiz({ agencies, lang, t }: SongQuizProps) {
           tries: nextTries,
           clipSec: clipDuration,
           hint: showUnitHint,
-          score: calcQuestionScore({ correct: true, wrongCount: nextTries - 1, clipSec: clipDuration, hint: showUnitHint })
+          listens: listenCount,
+          score: calcQuestionScore({
+            correct: true,
+            wrongCount: nextTries - 1,
+            clipSec: clipDuration,
+            hint: showUnitHint,
+            listens: listenCount
+          })
         }]);
     } else {
       setWrongShake(true);
@@ -784,7 +814,7 @@ export default function SongQuiz({ agencies, lang, t }: SongQuizProps) {
     setIsPlayingAudio(false);
     setLoadingAudio(false);
     setStatus("giveup");
-    setHistory((prev) => [...prev, { song: currentSong, correct: false, tries, clipSec: clipDuration, hint: showUnitHint, score: 0 }]);
+    setHistory((prev) => [...prev, { song: currentSong, correct: false, tries, clipSec: clipDuration, hint: showUnitHint, score: 0, listens: listenCount }]);
   };
 
   // 초보자 모드용 자동완성 후보 목록 (입력 전에는 전체 곡, 입력하면 일치하는 곡만 / 정확히 일치 → 앞부분 일치 → 포함 순)
@@ -903,6 +933,7 @@ export default function SongQuiz({ agencies, lang, t }: SongQuizProps) {
     setClipDuration(1);
     setStartSec(start);
     setTries(0);
+    setListenCount(0);
     setStatus("playing");
     setShowUnitHint(false);
     setGuess("");
@@ -967,7 +998,7 @@ export default function SongQuiz({ agencies, lang, t }: SongQuizProps) {
       return;
     }
     let cancelled = false;
-    renderQuizResultBlob(buildResultCardText(tRef.current, correctTotal, questionQueue.length, easyMode, accuracyPercent, totalScore))
+    renderQuizResultBlob(buildResultCardText(tRef.current, correctTotal, questionQueue.length, easyMode, accuracyPercent, totalScore, rankedHistory, lang))
       .then((b) => {
         if (!cancelled) resultBlobRef.current = b;
       })
@@ -977,7 +1008,7 @@ export default function SongQuiz({ agencies, lang, t }: SongQuizProps) {
     return () => {
       cancelled = true;
     };
-  }, [phase, questionQueue.length, correctTotal, accuracyPercent, totalScore, easyMode, lang]);
+  }, [phase, questionQueue.length, correctTotal, accuracyPercent, totalScore, easyMode, lang, rankedHistory]);
 
   const shareUrl = buildQuizShareUrl({ correct: correctTotal, total: questionQueue.length, easy: easyMode, score: totalScore });
   const tweetText = t("quizShareTweetText", {
@@ -1003,7 +1034,7 @@ export default function SongQuiz({ agencies, lang, t }: SongQuizProps) {
   const makeResultBlob = async (): Promise<Blob> => {
     if (resultBlobRef.current) return resultBlobRef.current;
     const b = await renderQuizResultBlob(
-      buildResultCardText(t, correctTotal, questionQueue.length, easyMode, accuracyPercent, totalScore)
+      buildResultCardText(t, correctTotal, questionQueue.length, easyMode, accuracyPercent, totalScore, rankedHistory, lang)
     );
     resultBlobRef.current = b;
     return b;
@@ -1487,7 +1518,11 @@ export default function SongQuiz({ agencies, lang, t }: SongQuizProps) {
                 <span className="sq-hist-num">{idx + 1}</span>
                 <div className="sq-hist-info">
                   <div className="sq-hist-title">{formatSongDisplay(item.song)}</div>
-                  <div className="sq-hist-unit">{formatFullUnitLabel(item.song)}</div>
+                  <div className="sq-hist-unit">
+                    {formatFullUnitLabel(item.song)}
+                    {item.correct &&
+                      ` · ${t("quizSongMeta", { sec: item.clipSec, listens: item.listens, tries: item.tries })}`}
+                  </div>
                 </div>
                 <div className="sq-hist-right">
                   <span className={`sq-badge ${item.correct ? "ok" : "fail"}`}>

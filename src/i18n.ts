@@ -241,7 +241,9 @@ const ko = {
   quizStreak: "🔥 {n}연속 정답!",
   quizHistorySortNote: "점수 높은 순",
   quizHistoryMore: "나머지 {n}곡 보기",
-  quizHistoryLess: "접기"
+  quizHistoryLess: "접기",
+  quizShareTop3Title: "점수 높은 곡 TOP 3",
+  quizSongMeta: "{sec}초 · {listens}번 듣고 · {tries}번 만에 정답"
 };
 
 export type MsgKey = keyof typeof ko;
@@ -451,7 +453,9 @@ const en: Record<MsgKey, string> = {
   quizStreak: "🔥 {n} in a row!",
   quizHistorySortNote: "Highest score first",
   quizHistoryMore: "Show {n} more",
-  quizHistoryLess: "Show less"
+  quizHistoryLess: "Show less",
+  quizShareTop3Title: "Top 3 songs by score",
+  quizSongMeta: "{sec}s clip · played {listens}× · correct on try {tries}"
 };
 
 const ja: Record<MsgKey, string> = {
@@ -659,7 +663,9 @@ const ja: Record<MsgKey, string> = {
   quizStreak: "🔥 {n}連続正解！",
   quizHistorySortNote: "スコアが高い順",
   quizHistoryMore: "残り{n}曲を表示",
-  quizHistoryLess: "閉じる"
+  quizHistoryLess: "閉じる",
+  quizShareTop3Title: "スコアが高い曲 TOP3",
+  quizSongMeta: "{sec}秒 ・ {listens}回聴いて ・ {tries}回目で正解"
 };
 
 const MESSAGES: Record<Lang, Record<MsgKey, string>> = { ko, en, ja };

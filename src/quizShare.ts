@@ -39,12 +39,21 @@ export function buildTweetIntentUrl(o: { text: string; url: string; hashtags?: s
   return `https://x.com/intent/tweet?${q}`;
 }
 
+export interface TopSongLine {
+  rank: number;
+  title: string; // 곡 제목
+  meta: string; // "1초 · 3번 듣고 · 1번 만에 정답"
+  score: string; // "100점"
+}
+
 export interface ResultCardText {
   title: string; // 퀴즈 이름
   rateLabel: string; // "최종 정답률"
   detail: string; // "총 10문제 중 7문제 정답!"
   modeLabel: string; // "초보자 모드"
   scoreText: string; // "점수 82점"
+  topTitle: string; // "점수 높은 곡 TOP 3"
+  top: TopSongLine[]; // 점수 높은 정답 곡 (최대 3개)
   footer: string; // 사이트 주소 등
   percent: number; // 0~100
 }
@@ -91,11 +100,23 @@ function wrapLines(ctx: CanvasRenderingContext2D, text: string, maxW: number, ma
   return lines;
 }
 
-// 1200×675(16:9) 결과 카드를 2배 해상도 PNG로 그림 (html2canvas 없이 직접 그려서 모바일에서도 안정적)
+// 한 줄에 들어가도록 끝을 "…"로 줄임
+function fitText(ctx: CanvasRenderingContext2D, text: string, maxW: number): string {
+  if (ctx.measureText(text).width <= maxW) return text;
+  const chars = Array.from(text);
+  while (chars.length > 1 && ctx.measureText(chars.join("") + "…").width > maxW) chars.pop();
+  return chars.join("") + "…";
+}
+
+// 결과 카드를 2배 해상도 PNG로 그림 (html2canvas 없이 직접 그려서 모바일에서도 안정적)
+// 가로 1200, 세로는 TOP 곡 수에 따라 달라짐 (3곡이면 1200×980)
 export function renderQuizResultBlob(c: ResultCardText): Promise<Blob> {
   const W = 1200;
-  const H = 675;
   const S = 2;
+  const n = Math.min(3, c.top.length);
+  const ROWS_Y = 520;
+  const ROW_H = 104;
+  const H = n > 0 ? ROWS_Y + n * ROW_H + 148 : 600;
   const canvas = document.createElement("canvas");
   canvas.width = W * S;
   canvas.height = H * S;
@@ -121,11 +142,11 @@ export function renderQuizResultBlob(c: ResultCardText): Promise<Blob> {
   ctx.restore();
 
   // 정답률 링
-  const cx = 336;
-  const cy = 318;
-  const r = 168;
+  const cx = 270;
+  const cy = 262;
+  const r = 128;
   const p = Math.max(0, Math.min(100, c.percent)) / 100;
-  ctx.lineWidth = 36;
+  ctx.lineWidth = 30;
   ctx.lineCap = "round";
   ctx.strokeStyle = "#f1f3f5";
   ctx.beginPath();
@@ -143,57 +164,108 @@ export function renderQuizResultBlob(c: ResultCardText): Promise<Blob> {
 
   // 링 가운데 글자
   ctx.textBaseline = "alphabetic";
-  ctx.font = `800 118px ${FONT}`;
+  ctx.font = `800 92px ${FONT}`;
   const numW = ctx.measureText(String(c.percent)).width;
-  ctx.font = `800 54px ${FONT}`;
+  ctx.font = `800 42px ${FONT}`;
   const pctW = ctx.measureText("%").width;
-  const startX = cx - (numW + pctW + 6) / 2;
+  const startX = cx - (numW + pctW + 4) / 2;
   ctx.textAlign = "left";
   ctx.fillStyle = "#1f2933";
-  ctx.font = `800 118px ${FONT}`;
-  ctx.fillText(String(c.percent), startX, cy + 36);
-  ctx.font = `800 54px ${FONT}`;
-  ctx.fillText("%", startX + numW + 6, cy + 36);
+  ctx.font = `800 92px ${FONT}`;
+  ctx.fillText(String(c.percent), startX, cy + 28);
+  ctx.font = `800 42px ${FONT}`;
+  ctx.fillText("%", startX + numW + 4, cy + 28);
   ctx.textAlign = "center";
   ctx.fillStyle = "#6b7785";
-  ctx.font = `600 28px ${FONT}`;
-  ctx.fillText(c.rateLabel, cx, cy + 92, 250);
+  ctx.font = `600 24px ${FONT}`;
+  ctx.fillText(c.rateLabel, cx, cy + 72, 190);
 
   // 오른쪽 글
-  const x0 = 640;
-  const maxW = 470;
+  const x0 = 470;
+  const maxW = 620;
   ctx.textAlign = "left";
   ctx.fillStyle = "#1f2933";
-  ctx.font = `800 46px ${FONT}`;
+  ctx.font = `800 40px ${FONT}`;
   const titleLines = wrapLines(ctx, c.title, maxW, 2);
-  let y = 190;
+  let y = 150;
   titleLines.forEach((ln) => {
     ctx.fillText(ln, x0, y);
-    y += 58;
+    y += 50;
   });
 
   // 모드 알약
-  ctx.font = `700 26px ${FONT}`;
-  const pillW = Math.min(maxW, ctx.measureText(c.modeLabel).width + 44);
+  ctx.font = `700 24px ${FONT}`;
+  const pillW = Math.min(maxW, ctx.measureText(c.modeLabel).width + 40);
   ctx.fillStyle = "#fff1f1";
-  roundRect(ctx, x0, y - 6, pillW, 48, 24);
+  roundRect(ctx, x0, y - 18, pillW, 44, 22);
   ctx.fill();
   ctx.fillStyle = "#e8505b";
-  ctx.fillText(c.modeLabel, x0 + 22, y + 28, pillW - 30);
-  y += 108;
+  ctx.fillText(c.modeLabel, x0 + 20, y + 13, pillW - 28);
+  y += 76;
 
-  // 점수 설명
+  // 점수 설명 + 점수
   ctx.fillStyle = "#1f2933";
-  ctx.font = `800 38px ${FONT}`;
+  ctx.font = `800 34px ${FONT}`;
   wrapLines(ctx, c.detail, maxW, 2).forEach((ln) => {
     ctx.fillText(ln, x0, y);
-    y += 52;
+    y += 46;
   });
-
-  // 점수
   ctx.fillStyle = "#e8505b";
-  ctx.font = `800 46px ${FONT}`;
-  ctx.fillText(c.scoreText, x0, y + 14, maxW);
+  ctx.font = `800 42px ${FONT}`;
+  ctx.fillText(c.scoreText, x0, y + 8, maxW);
+
+  // 점수 높은 곡 TOP
+  if (n > 0) {
+    ctx.save();
+    ctx.setLineDash([8, 8]);
+    ctx.strokeStyle = "#e4e8ee";
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(96, 452);
+    ctx.lineTo(W - 96, 452);
+    ctx.stroke();
+    ctx.restore();
+
+    ctx.textAlign = "left";
+    ctx.fillStyle = "#1f2933";
+    ctx.font = `800 30px ${FONT}`;
+    ctx.fillText(c.topTitle, 96, 500);
+
+    const medal = ["#ffd43b", "#ced4da", "#e8a56b"];
+    c.top.slice(0, n).forEach((s, i) => {
+      const top = ROWS_Y + i * ROW_H;
+      ctx.fillStyle = medal[i] || "#ced4da";
+      ctx.beginPath();
+      ctx.arc(126, top + 44, 27, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = "#1f2933";
+      ctx.textAlign = "center";
+      ctx.font = `800 28px ${FONT}`;
+      ctx.fillText(String(s.rank), 126, top + 54);
+
+      ctx.textAlign = "right";
+      ctx.fillStyle = "#e8505b";
+      ctx.font = `800 36px ${FONT}`;
+      ctx.fillText(s.score, W - 96, top + 52);
+
+      ctx.textAlign = "left";
+      ctx.fillStyle = "#1f2933";
+      ctx.font = `800 31px ${FONT}`;
+      ctx.fillText(fitText(ctx, s.title, 740), 180, top + 40);
+      ctx.fillStyle = "#6b7785";
+      ctx.font = `600 24px ${FONT}`;
+      ctx.fillText(fitText(ctx, s.meta, 740), 180, top + 78);
+
+      if (i < n - 1) {
+        ctx.strokeStyle = "#f1f3f5";
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.moveTo(96, top + ROW_H - 4);
+        ctx.lineTo(W - 96, top + ROW_H - 4);
+        ctx.stroke();
+      }
+    });
+  }
 
   // 하단 주소
   ctx.textAlign = "center";

@@ -7,7 +7,10 @@ export const SCORE_RULES = {
   perWrong: 10, // 오답 1회당 감점
   wrongCap: 30, // 오답 감점의 최대치
   hint: 10, // 유닛 힌트를 봤을 때 감점
-  minCorrect: 10 // 정답이면 최소 이 점수는 보장 (포기는 0점)
+  minCorrect: 10, // 정답이면 최소 이 점수는 보장 (포기는 0점)
+  freeListens: 3, // 이 횟수까지는 몇 번 들어도 감점 없음 (같은 구간을 다시 듣는 건 정상 플레이)
+  perExtraListen: 2, // 무료 횟수를 넘긴 뒤 1회당 감점 (0으로 하면 들은 횟수는 기록만 하고 점수에는 반영하지 않음)
+  listenCap: 10 // 들은 횟수 감점의 최대치
 } as const;
 
 export interface ScoreInput {
@@ -15,6 +18,7 @@ export interface ScoreInput {
   wrongCount: number; // 틀린 횟수 (정답 제출은 제외)
   clipSec: number; // 정답/포기 시점에 설정돼 있던 듣기 길이(초)
   hint: boolean; // 유닛 힌트를 봤는지
+  listens: number; // 이 문제에서 1초(또는 늘린 길이) 구간을 재생한 총 횟수
 }
 
 // 문제 하나의 점수 (0~100)
@@ -25,6 +29,7 @@ export function calcQuestionScore(i: ScoreInput): number {
     R.base -
     R.perExtraSecond * Math.max(0, Math.round(i.clipSec) - 1) -
     Math.min(R.wrongCap, R.perWrong * Math.max(0, i.wrongCount)) -
+    Math.min(R.listenCap, R.perExtraListen * Math.max(0, i.listens - R.freeListens)) -
     (i.hint ? R.hint : 0);
   return Math.max(R.minCorrect, Math.min(R.base, raw));
 }
