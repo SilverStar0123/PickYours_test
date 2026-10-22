@@ -356,6 +356,70 @@ h1 {
   color: #999;
 }
 
+/* 스페셜 / Shuffle 등의 단일 컬렉션 취향표: 저장 이미지의 4열 카드 레이아웃과 대응 */
+.personal-card--collection {
+  width: min(820px, 100%);
+  max-width: 100%;
+  padding: 28px;
+  background: #fffafb;
+  border: 1px solid #f5e3e9;
+  box-shadow: 0 8px 28px rgba(109, 46, 68, .06);
+}
+.personal-card--collection .personal-title {
+  margin: 5px 0 2px;
+  font-size: 1.6rem;
+  color: #34303a;
+}
+.personal-collection-eyebrow {
+  text-align: center;
+  color: #c56b85;
+  font-size: .76rem;
+  font-weight: 800;
+  letter-spacing: .09em;
+}
+.personal-collection-count {
+  color: #8f8190;
+  text-align: center;
+  font-size: .78rem;
+  margin-bottom: 22px;
+}
+.personal-card--collection .personal-grid { display: block; }
+.personal-agency--collection { padding: 0; background: none; }
+.personal-picks--collection {
+  grid-template-columns: repeat(4, minmax(0,1fr));
+  gap: 12px;
+}
+.personal-picks--collection .personal-pick {
+  min-width: 0;
+  padding: 13px 6px 12px;
+  background: white;
+  border: 1px solid #f0e6ea;
+  border-radius: 13px;
+  box-shadow: 0 2px 6px rgba(47,36,45,.025);
+}
+.personal-picks--collection .slot {
+  width: min(124px, 95%);
+  height: auto;
+  aspect-ratio: 1 / 1;
+  border-radius: 11px;
+}
+.personal-picks--collection .pick-name {
+  margin-top: 9px;
+  font-size: .82rem;
+  min-height: 1.5em;
+  overflow-wrap: anywhere;
+}
+.personal-picks--collection .pick-unit {
+  margin-top: 3px;
+  color: #b76b83;
+  font-size: .7rem;
+  overflow-wrap: anywhere;
+}
+@media (max-width: 600px) {
+  .personal-card--collection { padding: 16px; }
+  .personal-picks--collection { grid-template-columns: repeat(2, minmax(0,1fr)); gap: 9px; }
+}
+
 .nickname-row {
   display: flex;
   align-items: center;

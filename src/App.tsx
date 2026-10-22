@@ -598,7 +598,8 @@ function PickYoursMain({ sheetId, onSwitchSheet }: {
             agencies,
             picks,
             memberMap,
-            trimmedName ? t("personalTitleNamed", { name: trimmedName }) : t("personalTitleDefault")
+            trimmedName ? t("personalTitleNamed", { name: trimmedName }) : t("personalTitleDefault"),
+            sheetId === "current" ? undefined : titleForSheet(lang)
           ),
         `${safeFileName(trimmedName || "my")}_${sheetId}_picks.png`,
         30000
@@ -1085,7 +1086,7 @@ function PickYoursMain({ sheetId, onSwitchSheet }: {
             )}
           </p>}
 
-          {roomId && (
+          {multiplayer && roomId && (
             <div className="room-banner">
               <span>
                 {roomError
@@ -1165,15 +1166,27 @@ function PickYoursMain({ sheetId, onSwitchSheet }: {
           <section className="finish-section">
             <h2 className="finish-title">{t("myPicksTitle")}</h2>
             <div className="personal-wrap">
-              <div ref={personalRef} className="personal-card">
+              <div ref={personalRef} className={`personal-card${sheetId !== "current" ? " personal-card--collection" : ""}`}>
+                {sheetId !== "current" && (
+                  <div className="personal-collection-eyebrow">PICKYOURS · {titleForSheet(lang)}</div>
+                )}
                 <h3 className="personal-title">
                   {trimmedName ? t("personalTitleNamed", { name: trimmedName }) : t("personalTitleDefault")}
                 </h3>
+                {sheetId !== "current" && (
+                  <div className="personal-collection-count">
+                    {lang === "ko" ? `${pickedCount} / ${totalGroups} 선택` :
+                     lang === "ja" ? `${pickedCount} / ${totalGroups} 選択` :
+                     `${pickedCount} / ${totalGroups} selected`}
+                  </div>
+                )}
                 <div className="personal-grid">
                   {agencies.map((agency) => (
-                    <div key={agency.id} className="personal-agency">
-                      <img src={agency.logo} alt={agency.name} className="personal-agency-logo" />
-                      <div className="personal-picks">
+                    <div key={agency.id} className={`personal-agency${sheetId !== "current" ? " personal-agency--collection" : ""}`}>
+                      {sheetId === "current" && (
+                        <img src={agency.logo} alt={agency.name} className="personal-agency-logo" />
+                      )}
+                      <div className={`personal-picks${sheetId !== "current" ? " personal-picks--collection" : ""}`}>
                         {agency.groups.map((g) => {
                           const m = memberMap[picks[g.id]];
                           const pick = m && m.groupId === g.id ? m : undefined;

@@ -141,9 +141,14 @@ export async function loadSheetAgencies(sheet: PickSheetId): Promise<Agency[]> {
     const name = stripQuotes(r.name), unit = stripQuotes(r.ex_unit), img = stripQuotes(r.img);
     if (name && unit && img) overrides.set(`${unit}::${name}`, img);
   });
+  // 스페셜 유닛의 표시는 CSV를 기준으로 하되, 사용자가 지정한 유닛 순서를 우선합니다.
+  // 새 이름(Double Face 등)이 추가되어도 pickSheets.ts 수정을 기다리지 않고 표시합니다.
+  // 그룹 ID는 CSV에 적힌 원래 이름을 사용하므로 저장된 선택과 호환됩니다.
+  const csvUnitNames = Array.from(new Set(rows.flatMap((r) => splitSheetUnits(r[source] || ""))));
   const names = sheet === "special"
-    ? [...SPECIAL_UNITS]
-    : Array.from(new Set(rows.flatMap((r) => splitSheetUnits(r[source] || ""))));
+    ? [...SPECIAL_UNITS.filter((unit) => csvUnitNames.includes(unit)),
+       ...csvUnitNames.filter((unit) => !(SPECIAL_UNITS as readonly string[]).includes(unit))]
+    : csvUnitNames;
   const groups: Group[] = names.flatMap((unit) => {
     const roster = rows.filter((r) => splitSheetUnits(r[source] || "").includes(unit));
     if (!roster.length) return []; // CSV가 준비되지 않은 팀은 빈 선택지로 표시하지 않음

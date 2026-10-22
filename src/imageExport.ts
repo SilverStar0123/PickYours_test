@@ -76,12 +76,121 @@ function roundRectPath(
   ctx.closePath();
 }
 
+// 스페셜/Shuffle 등 한 종류의 유닛을 여러 장 선택하는 취향표 전용 이미지.
+// 기존 2열 소속사 레이아웃에서는 소속사가 하나일 때 오른쪽 절반이 비고 이미지가 길어집니다.
+// 이 레이아웃은 유닛 카드 4열로 전체 너비를 사용합니다.
+async function renderCollectionBlob(
+  agencies: Agency[],
+  picks: Picks,
+  memberMap: Record<string, Member>,
+  title: string,
+  collectionName: string
+): Promise<Blob> {
+  const groups = agencies.flatMap((a) => a.groups);
+  const W = 800;
+  const PAD = 32;
+  const GAP = 14;
+  const COLS = 4;
+  const CARD_W = (W - PAD * 2 - GAP * (COLS - 1)) / COLS;
+  const CARD_H = 233;
+  const PHOTO = 132;
+  const HEADER_H = 125;
+  const rows = Math.ceil(groups.length / COLS);
+  const H = PAD + HEADER_H + rows * CARD_H + Math.max(0, rows - 1) * GAP + PAD;
+
+  const images = await Promise.all(groups.map((g) => {
+    const member = memberMap[picks[g.id]];
+    return member && member.groupId === g.id
+      ? loadImage(member.img, member.fallback)
+      : Promise.resolve(null);
+  }));
+
+  const canvas = document.createElement("canvas");
+  canvas.width = Math.round(W * IMAGE_SCALE);
+  canvas.height = Math.round(H * IMAGE_SCALE);
+  const ctx = canvas.getContext("2d");
+  if (!ctx) throw new Error("canvas 미지원");
+  ctx.scale(IMAGE_SCALE, IMAGE_SCALE);
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  ctx.fillStyle = "#fffafb";
+  ctx.fillRect(0, 0, W, H);
+
+  // 과한 대형 로고 대신 가벼운 헤더와 소분류 표시.
+  ctx.fillStyle = "#c66b84";
+  ctx.font = "bold 12px sans-serif";
+  ctx.fillText("PICKYOURS · PERSONAL COLLECTION", W / 2, PAD + 12);
+  ctx.fillStyle = "#342e37";
+  ctx.font = "bold 29px sans-serif";
+  ctx.fillText(title, W / 2, PAD + 48, W - PAD * 2);
+  ctx.fillStyle = "#aa697d";
+  ctx.font = "bold 15px sans-serif";
+  ctx.fillText(collectionName, W / 2, PAD + 82, W - PAD * 2);
+
+  const selected = groups.filter((g) => memberMap[picks[g.id]]?.groupId === g.id).length;
+  ctx.fillStyle = "#92838d";
+  ctx.font = "12px sans-serif";
+  ctx.fillText(`${selected} / ${groups.length} SELECTED`, W / 2, PAD + 105);
+
+  groups.forEach((group, i) => {
+    const member = memberMap[picks[group.id]];
+    const picked = member?.groupId === group.id ? member : null;
+    const col = i % COLS, row = Math.floor(i / COLS);
+    const bx = PAD + col * (CARD_W + GAP);
+    const by = PAD + HEADER_H + row * (CARD_H + GAP);
+    const cx = bx + CARD_W / 2;
+
+    ctx.fillStyle = "#ffffff";
+    roundRectPath(ctx, bx, by, CARD_W, CARD_H, 14);
+    ctx.fill();
+    ctx.strokeStyle = "#eee3e9";
+    ctx.lineWidth = 1;
+    ctx.stroke();
+
+    const x = cx - PHOTO / 2, y = by + 14;
+    ctx.save();
+    roundRectPath(ctx, x, y, PHOTO, PHOTO, 11);
+    ctx.clip();
+    ctx.fillStyle = "#f4eef1";
+    ctx.fillRect(x, y, PHOTO, PHOTO);
+    const im = images[i];
+    if (im && im.naturalWidth && im.naturalHeight) {
+      const side = Math.min(im.naturalWidth, im.naturalHeight);
+      ctx.drawImage(im,
+        (im.naturalWidth - side) / 2,
+        (im.naturalHeight - side) / 2,
+        side, side, x, y, PHOTO, PHOTO);
+    } else {
+      ctx.fillStyle = "#b9aab6";
+      ctx.font = "bold 24px sans-serif";
+      ctx.fillText("?", cx, y + PHOTO / 2);
+    }
+    ctx.restore();
+
+    // 글자가 긴 팀(예: team 우시와카마루)은 넘치지 않도록 Canvas가 너비를 맞춰 줍니다.
+    ctx.fillStyle = picked ? "#3e3840" : "#a8a0a7";
+    ctx.font = "bold 15px sans-serif";
+    ctx.fillText(picked?.name || "—", cx, by + 167, CARD_W - 15);
+    ctx.fillStyle = "#b2637f";
+    ctx.font = "12px sans-serif";
+    ctx.fillText(group.name, cx, by + 195, CARD_W - 14);
+  });
+
+  return new Promise<Blob>((resolve, reject) =>
+    canvas.toBlob((b) => (b ? resolve(b) : reject(new Error("toBlob 실패"))), "image/png")
+  );
+}
+
 export async function renderPersonalBlob(
   agencies: Agency[],
   picks: Picks,
   memberMap: Record<string, Member>,
-  title: string
+  title: string,
+  collectionName?: string
 ): Promise<Blob> {
+  if (collectionName) {
+    return renderCollectionBlob(agencies, picks, memberMap, title, collectionName);
+  }
   // styles.css의 .personal-card 와 같은 크기/간격 (화면 미리보기와 같은 모양)
   const W = 560, PAD = 24, GRID_GAP = 14, BOX_PAD = 12, PICK_GAP = 10, SLOT = 106, LOGO_H = 40;
   const NAME_LH = 15.6, UNIT_H = 13;
