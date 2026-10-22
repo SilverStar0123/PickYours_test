@@ -1,6 +1,8 @@
 import type { Agency, Member, Picks } from "./types";
 import { IMAGE_SCALE } from "./config";
 import html2canvas from "html2canvas";
+import { SPECIAL_UNIT_SECTIONS, type PickSheetId } from "./pickSheets";
+import type { Lang } from "./i18n";
 
 // ───────────────────────── 이미지 렌더링 및 저장 ─────────────────────────
 async function renderOnce(target: HTMLElement, scale: number): Promise<Blob> {
@@ -181,13 +183,187 @@ async function renderCollectionBlob(
   );
 }
 
+// 스페셜 유닛 전용: 유닛을 세 섹션으로 묶고, 유닛명을 캐릭터 이름보다 위에 배치합니다.
+// 같은 캐릭터가 여러 유닛에서 반복되어도 어느 유닛의 선택인지 바로 알 수 있습니다.
+async function renderSpecialCollectionBlob(
+  agencies: Agency[],
+  picks: Picks,
+  memberMap: Record<string, Member>,
+  title: string,
+  collectionName: string,
+  lang: Lang
+): Promise<Blob> {
+  const groups = agencies.flatMap((agency) => agency.groups);
+  const known = new Set<string>();
+  const sections: { title: string; groups: typeof groups }[] = SPECIAL_UNIT_SECTIONS.map((section) => {
+    const grouped = section.units.flatMap((name) => groups.filter((group) => group.id === name));
+    grouped.forEach((group) => known.add(group.id));
+    return { title: section.labels[lang], groups: grouped };
+  }).filter((section) => section.groups.length > 0);
+
+  // 신규 등록된 유닛은 섹션 설정을 업데이트하기 전에도 이미지에서 누락되지 않습니다.
+  const other = groups.filter((group) => !known.has(group.id));
+  if (other.length) {
+    const fallback = { ko: "그 밖의 스페셜 유닛", en: "More Special Units", ja: "その他のスペシャルユニット" };
+    sections.push({ title: fallback[lang], groups: other });
+  }
+
+  const WIDTH = 1080;
+  const OUTER = 42;
+  const CONTENT_W = WIDTH - OUTER * 2;
+  const CARD_GAP = 12;
+  const CARD_H = 220;
+  const GROUP_HEAD_H = 50;
+  const GROUP_PAD = 16;
+  const GROUP_GAP = 20;
+  const HEADER_H = 137;
+  const FOOTER_H = 30;
+  // 향후 스페셜 유닛이 늘어나도 카드가 너무 작아지지 않게 최대 6열로 제한.
+  const columnsFor = (count: number) => Math.min(6, Math.max(5, count));
+  const rowsFor = (count: number) => Math.ceil(count / columnsFor(count));
+  const sectionHeight = (count: number) =>
+    GROUP_HEAD_H + rowsFor(count) * CARD_H +
+    Math.max(0, rowsFor(count) - 1) * CARD_GAP + GROUP_PAD * 2;
+  const HEIGHT = OUTER + HEADER_H + sections.reduce(
+    (total, section) => total + sectionHeight(section.groups.length), 0
+  ) + Math.max(0, sections.length - 1) * GROUP_GAP + FOOTER_H + OUTER;
+
+  const imagesById = new Map<string, HTMLImageElement | null>();
+  await Promise.all(groups.map(async (group) => {
+    const member = memberMap[picks[group.id]];
+    imagesById.set(group.id, member && member.groupId === group.id
+      ? await loadImage(member.img, member.fallback) : null);
+  }));
+
+  const canvas = document.createElement("canvas");
+  canvas.width = Math.round(WIDTH * IMAGE_SCALE);
+  canvas.height = Math.round(HEIGHT * IMAGE_SCALE);
+  const ctx = canvas.getContext("2d");
+  if (!ctx) throw new Error("canvas 미지원");
+  ctx.scale(IMAGE_SCALE, IMAGE_SCALE);
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  ctx.fillStyle = "#fff9fb";
+  ctx.fillRect(0, 0, WIDTH, HEIGHT);
+
+  const selected = groups.filter((group) => memberMap[picks[group.id]]?.groupId === group.id).length;
+  ctx.fillStyle = "#b65a77";
+  ctx.font = "700 14px sans-serif";
+  ctx.fillText("PICKYOURS · PERSONAL COLLECTION", WIDTH / 2, OUTER + 9);
+  ctx.fillStyle = "#352d36";
+  ctx.font = "700 36px sans-serif";
+  ctx.fillText(title, WIDTH / 2, OUTER + 49, CONTENT_W);
+  ctx.fillStyle = "#ad5877";
+  ctx.font = "700 17px sans-serif";
+  ctx.fillText(collectionName, WIDTH / 2, OUTER + 84);
+  ctx.fillStyle = "#847580";
+  ctx.font = "14px sans-serif";
+  ctx.fillText(`${selected} / ${groups.length} SELECTED`, WIDTH / 2, OUTER + 113);
+
+  let cursorY = OUTER + HEADER_H;
+  sections.forEach((section, sectionIndex) => {
+    const groupX = OUTER;
+    const sectionY = cursorY;
+    const groupHeight = sectionHeight(section.groups.length);
+    // 같은 섹션에 속한 선택들을 하나의 판 위에 묶되 색을 과하게 늘리지 않습니다.
+    ctx.fillStyle = "#ffffff";
+    roundRectPath(ctx, groupX, sectionY, CONTENT_W, groupHeight, 20);
+    ctx.fill();
+    ctx.strokeStyle = "#eee2e8";
+    ctx.lineWidth = 1.2;
+    ctx.stroke();
+
+    const left = groupX + GROUP_PAD;
+    const titleY = sectionY + GROUP_PAD + 18;
+    ctx.fillStyle = "#ac5772";
+    roundRectPath(ctx, left, titleY - 15, 39, 30, 8);
+    ctx.fill();
+    ctx.fillStyle = "#ffffff";
+    ctx.font = "700 15px sans-serif";
+    ctx.fillText(String(sectionIndex + 1).padStart(2, "0"), left + 19.5, titleY);
+
+    ctx.textAlign = "left";
+    ctx.fillStyle = "#453741";
+    ctx.font = "700 20px sans-serif";
+    ctx.fillText(section.title, left + 54, titleY);
+    ctx.textAlign = "right";
+    ctx.fillStyle = "#ab9aa4";
+    ctx.font = "13px sans-serif";
+    ctx.fillText(`${section.groups.length} UNITS`, WIDTH - OUTER - GROUP_PAD, titleY);
+    ctx.textAlign = "center";
+
+    const count = section.groups.length;
+    const columns = columnsFor(count);
+    const cardW = (CONTENT_W - GROUP_PAD * 2 - CARD_GAP * (columns - 1)) / columns;
+    section.groups.forEach((group, index) => {
+      const col = index % columns;
+      const row = Math.floor(index / columns);
+      const by = sectionY + GROUP_HEAD_H + GROUP_PAD + row * (CARD_H + CARD_GAP);
+      const member = memberMap[picks[group.id]];
+      const picked = member?.groupId === group.id ? member : null;
+      const bx = OUTER + GROUP_PAD + col * (cardW + CARD_GAP);
+      const cx = bx + cardW / 2;
+
+      // 유닛명을 카드 맨 위의 진한 라벨로 고정: 캐릭터가 중복되어도 구분 가능.
+      ctx.fillStyle = "#fefbfc";
+      roundRectPath(ctx, bx, by, cardW, CARD_H, 13);
+      ctx.fill();
+      ctx.strokeStyle = "#eee6ea";
+      ctx.stroke();
+      ctx.fillStyle = "#f6e7ed";
+      roundRectPath(ctx, bx + 7, by + 7, cardW - 14, 38, 8);
+      ctx.fill();
+      ctx.fillStyle = "#8e3958";
+      ctx.font = `700 ${columns > 5 ? 12 : 14}px sans-serif`;
+      ctx.fillText(group.name, cx, by + 26, cardW - 25);
+
+      const photo = Math.min(123, cardW - 28);
+      const px = cx - photo / 2;
+      const py = by + 51;
+      ctx.save();
+      roundRectPath(ctx, px, py, photo, photo, 10);
+      ctx.clip();
+      ctx.fillStyle = "#f0eaf0";
+      ctx.fillRect(px, py, photo, photo);
+      const img = imagesById.get(group.id);
+      if (img && img.naturalWidth && img.naturalHeight) {
+        const side = Math.min(img.naturalWidth, img.naturalHeight);
+        ctx.drawImage(img, (img.naturalWidth - side) / 2,
+          (img.naturalHeight - side) / 2, side, side,
+          px, py, photo, photo);
+      } else {
+        ctx.fillStyle = "#aca0a9";
+        ctx.font = "700 23px sans-serif";
+        ctx.fillText(picked ? "?" : "—", cx, py + photo / 2);
+      }
+      ctx.restore();
+
+      ctx.fillStyle = picked ? "#39343b" : "#aca1a9";
+      ctx.font = `700 ${columns > 5 ? 13 : 15}px sans-serif`;
+      ctx.fillText(picked?.name || (lang === "ko" ? "미선택" : "—"),
+        cx, by + 196, cardW - 16);
+    });
+
+    cursorY += groupHeight + GROUP_GAP;
+  });
+
+  return new Promise<Blob>((resolve, reject) =>
+    canvas.toBlob((blob) => blob ? resolve(blob) : reject(new Error("toBlob 실패")), "image/png")
+  );
+}
+
 export async function renderPersonalBlob(
   agencies: Agency[],
   picks: Picks,
   memberMap: Record<string, Member>,
   title: string,
-  collectionName?: string
+  collectionName?: string,
+  sheetId?: PickSheetId,
+  lang: Lang = "ko"
 ): Promise<Blob> {
+  if (sheetId === "special" && collectionName) {
+    return renderSpecialCollectionBlob(agencies, picks, memberMap, title, collectionName, lang);
+  }
   if (collectionName) {
     return renderCollectionBlob(agencies, picks, memberMap, title, collectionName);
   }

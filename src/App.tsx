@@ -599,7 +599,9 @@ function PickYoursMain({ sheetId, onSwitchSheet }: {
             picks,
             memberMap,
             trimmedName ? t("personalTitleNamed", { name: trimmedName }) : t("personalTitleDefault"),
-            sheetId === "current" ? undefined : titleForSheet(lang)
+            sheetId === "current" ? undefined : titleForSheet(lang),
+            sheetId,
+            lang
           ),
         `${safeFileName(trimmedName || "my")}_${sheetId}_picks.png`,
         30000

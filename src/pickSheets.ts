@@ -11,6 +11,28 @@ export const SPECIAL_UNITS = [
   "Rain-bows", "Ba-barrier", "Lilith"
 ] as const;
 
+// 스페셜 취향표 PNG 이미지의 섹션 구성입니다.
+// 표시 순서는 아래 units 순서대로 결정됩니다. 새 유닛이 추가되어 목록에 없으면
+// 이미지 맨 아래 '기타 스페셜 유닛'에 자동 배치되므로 사라지지 않습니다.
+// 친숙함의 우열이 아니라 등장 맥락으로 구분하는, 화면상 정리용 섹션입니다.
+export const SPECIAL_UNIT_SECTIONS = [
+  {
+    id: "featured",
+    labels: { ko: "최근·주요 팀", en: "Featured Teams", ja: "注目のチーム" },
+    units: ["Eve", "Adam", "Double Face", "프로듀서", "J&A"]
+  },
+  {
+    id: "legacy",
+    labels: { ko: "추억의 유닛", en: "Legacy Units", ja: "懐かしのユニット" },
+    units: ["구fine", "오기인", "구Valkyrie", "Knight Killers", "데드맨즈"]
+  },
+  {
+    id: "stories",
+    labels: { ko: "스토리·기획 팀", en: "Story & Project Teams", ja: "ストーリー・企画チーム" },
+    units: ["team 우시와카마루", "트로이메라이", "Lilith", "Rain-bows", "Ba-barrier", "슈퍼 아이돌"]
+  }
+] as const;
+
 export type PickSheet = {
   id: PickSheetId;
   source: "unit" | "ex_unit" | "shuffle1" | "shuffle2";
@@ -35,7 +57,7 @@ export const PICK_SHEETS: Record<PickSheetId, PickSheet> = {
     id: "special",
     source: "ex_unit",
     multiplayer: true,
-    showInIndex: false,
+    showInIndex: true,
     collection: "specialRooms",
     route: "#/picks/special",
     labels: { ko: "스페셜 유닛", en: "Special Units", ja: "スペシャルユニット" }
