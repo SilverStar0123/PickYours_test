@@ -1,7 +1,8 @@
 import React, { useState, useEffect, useRef, useMemo } from "react";
 import type { Lang, MsgKey } from "./i18n";
 import type { Agency } from "./types";
-import { loadCsv, stripQuotes } from "./csv";
+import { loadAgencies, loadCsv, stripQuotes } from "./csv";
+import { localizeAgencies } from "./localize";
 import { SHUFFLE_UNIT_ID, FUSION_UNIT_ID, classifyQuizUnit, makeOfficialUnitAliases } from "./quizUnits";
 export { SHUFFLE_UNIT_ID, FUSION_UNIT_ID } from "./quizUnits";
 import "./quiz.css";
@@ -51,7 +52,6 @@ interface HistoryItem {
 }
 
 interface SongQuizProps {
-  agencies: Agency[]; // 현재 언어로 로컬라이즈된 소속사/유닛 목록
   lang: Lang;
   t: (key: MsgKey, params?: Record<string, string | number>) => string;
 }
@@ -191,10 +191,14 @@ function primaryTitle(s: SongItem, lang: Lang): string {
     : s.titleKo || s.titleEn || s.titleJa;
 }
 
-export default function SongQuiz({ agencies, lang, t }: SongQuizProps) {
+export default function SongQuiz({ lang, t }: SongQuizProps) {
   const tRef = useRef(t);
   tRef.current = t;
 
+  // 퀴즈의 정규 유닛 기준은 현재 취향표(unit 컬럼)로 고정합니다.
+  // 스페셜/Shuffle 취향표에서 넘어와도 해당 취향표의 그룹을 퀴즈에 전달하지 않습니다.
+  const [quizBaseAgencies, setQuizBaseAgencies] = useState<Agency[]>([]);
+  const quizAgencies = useMemo(() => localizeAgencies(quizBaseAgencies, lang), [quizBaseAgencies, lang]);
   const [songs, setSongs] = useState<SongItem[]>([]);
   const [loadingCsv, setLoadingCsv] = useState(true);
   const [csvError, setCsvError] = useState(false);
@@ -211,7 +215,7 @@ export default function SongQuiz({ agencies, lang, t }: SongQuizProps) {
 
   // 선택된 유닛 필터 (16개 정규 유닛 + 셔플곡 + 퓨전곡)
   const allUnits = useMemo(() => {
-    const base = agencies.flatMap((a) => a.groups.map((g) => ({ id: g.id, name: g.name })));
+    const base = quizAgencies.flatMap((a) => a.groups.map((g) => ({ id: g.id, name: g.name })));
     // 셔플곡이 1곡이라도 있으면 '셔플곡' 필터 버튼 추가
     if (songs.some((s) => s.unit === SHUFFLE_UNIT_ID)) {
       base.push({ id: SHUFFLE_UNIT_ID, name: tRef.current("quizShuffleUnit") });
@@ -221,7 +225,7 @@ export default function SongQuiz({ agencies, lang, t }: SongQuizProps) {
       base.push({ id: FUSION_UNIT_ID, name: tRef.current("quizFusionUnit") });
     }
     return base;
-  }, [agencies, songs, lang]);
+  }, [quizAgencies, songs, lang]);
 
   const unitNameMap = useMemo(() => {
     const m: Record<string, string> = {};
@@ -306,14 +310,17 @@ export default function SongQuiz({ agencies, lang, t }: SongQuizProps) {
 
   // songs.csv의 unit이 정규 16개 유닛 중 하나가 아니라면 셔플곡으로 자동 분류.
   // 서로 다른 정규 유닛이 합쳐진 이름(&, ×, VS 등)은 퓨전곡으로 분류한다.
-  // 정규 유닛명은 App에서 먼저 불러온 agencies의 그룹 목록을 사용하므로 별도 CSV 요청이 필요 없다.
+  // 정규 유닛은 취향표 종류와 상관없이 loadAgencies()에서 별도로 읽는다.
   useEffect(() => {
     let cancelled = false;
     (async () => {
       try {
-        const songRows = await loadCsv("songs.csv");
+        // 앱에서 현재 보고 있던 시트의 agencies를 받지 않고, 항상 unit 기반 16개 유닛을 로드합니다.
+        // Firestore 요청은 발생하지 않으며 CSV는 배포 버전별 브라우저 캐시를 재사용합니다.
+        const [currentAgencies, songRows] = await Promise.all([loadAgencies(), loadCsv("songs.csv")]);
         if (cancelled) return;
-        const officialAliases = makeOfficialUnitAliases(agencies.flatMap((a) => a.groups));
+        setQuizBaseAgencies(currentAgencies);
+        const officialAliases = makeOfficialUnitAliases(currentAgencies.flatMap((a) => a.groups));
 
         // 2) songs.csv 파싱 (영어명 등 일부 언어 제목이 비어 있어도 있는 제목으로 자동 보완)
         const parsed: SongItem[] = [];

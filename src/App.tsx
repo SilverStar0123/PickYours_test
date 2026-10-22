@@ -1060,7 +1060,7 @@ function PickYoursMain({ sheetId, onSwitchSheet }: {
         </nav>
       )}
       {activeTab === "quiz" ? (
-        <SongQuiz agencies={agencies} lang={lang} t={t} />
+        <SongQuiz lang={lang} t={t} />
       ) : !showResult ? (
         <>
           {myRoomsPanel}
