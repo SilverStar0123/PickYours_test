@@ -6,9 +6,10 @@
 export type PickSheetId = "current" | "special" | "shuffle1" | "shuffle2";
 
 export const SPECIAL_UNITS = [
-  "데드맨즈", "구fine", "나이트 킬러즈", "team 우시와카마루", "트로이메라이",
-  "Rain-bows", "Babarrier", "Lilith", "DoubleFace", "오기인",
-  "Eve", "Adam", "J&A"
+  "Eve", "Adam", "J&A",
+  "데드맨즈", "구fine", "Knight Killers", "team 우시와카마루", "트로이메라이",
+  "Rain-bows", "Ba-barrier", "Lilith", "Double Face", "오기인",
+  "구Valkyrie", "프로듀서"
 ] as const;
 
 export type PickSheet = {
@@ -44,7 +45,7 @@ export const PICK_SHEETS: Record<PickSheetId, PickSheet> = {
     id: "shuffle1",
     source: "shuffle1",
     multiplayer: false,
-    showInIndex: true,
+    showInIndex: false,
     // multiplayer를 true로 바꾸기 전에 shuffle1Rooms용 Firestore 규칙을 추가하세요.
     collection: "shuffle1Rooms",
     route: "#/picks/shuffle1",
@@ -54,7 +55,7 @@ export const PICK_SHEETS: Record<PickSheetId, PickSheet> = {
     id: "shuffle2",
     source: "shuffle2",
     multiplayer: false,
-    showInIndex: true,
+    showInIndex: false,
     // multiplayer를 true로 바꾸기 전에 shuffle2Rooms용 Firestore 규칙을 추가하세요.
     collection: "shuffle2Rooms",
     route: "#/picks/shuffle2",
