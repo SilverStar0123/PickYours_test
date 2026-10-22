@@ -33,6 +33,33 @@ export const SPECIAL_UNIT_SECTIONS = [
   }
 ] as const;
 
+// 화면 미리보기와 PNG 저장에서 동일한 섹션 구성/순서를 사용합니다.
+// 그룹의 내부 id는 CSV의 고정 유닛명, 화면에 보이는 name은 번역된 이름이어도 됩니다.
+export function groupSpecialUnits<T extends { id: string }>(
+  groups: T[],
+  lang: "ko" | "en" | "ja"
+): { id: string; title: string; groups: T[] }[] {
+  const assigned = new Set<string>();
+  const sections: { id: string; title: string; groups: T[] }[] = SPECIAL_UNIT_SECTIONS.map((section) => {
+    const members = section.units.flatMap((unitId) =>
+      groups.filter((group) => group.id === unitId)
+    );
+    members.forEach((group) => assigned.add(group.id));
+    return { id: section.id, title: section.labels[lang], groups: members };
+  }).filter((section) => section.groups.length > 0);
+
+  const remaining = groups.filter((group) => !assigned.has(group.id));
+  if (remaining.length > 0) {
+    const labels = {
+      ko: "그 밖의 스페셜 유닛",
+      en: "More Special Units",
+      ja: "その他のスペシャルユニット"
+    };
+    sections.push({ id: "other", title: labels[lang], groups: remaining });
+  }
+  return sections;
+}
+
 export type PickSheet = {
   id: PickSheetId;
   source: "unit" | "ex_unit" | "shuffle1" | "shuffle2";

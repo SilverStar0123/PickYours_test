@@ -1,7 +1,7 @@
 import type { Agency, Member, Picks } from "./types";
 import { IMAGE_SCALE } from "./config";
 import html2canvas from "html2canvas";
-import { SPECIAL_UNIT_SECTIONS, type PickSheetId } from "./pickSheets";
+import { groupSpecialUnits, type PickSheetId } from "./pickSheets";
 import type { Lang } from "./i18n";
 
 // ───────────────────────── 이미지 렌더링 및 저장 ─────────────────────────
@@ -194,19 +194,8 @@ async function renderSpecialCollectionBlob(
   lang: Lang
 ): Promise<Blob> {
   const groups = agencies.flatMap((agency) => agency.groups);
-  const known = new Set<string>();
-  const sections: { title: string; groups: typeof groups }[] = SPECIAL_UNIT_SECTIONS.map((section) => {
-    const grouped = section.units.flatMap((name) => groups.filter((group) => group.id === name));
-    grouped.forEach((group) => known.add(group.id));
-    return { title: section.labels[lang], groups: grouped };
-  }).filter((section) => section.groups.length > 0);
-
-  // 신규 등록된 유닛은 섹션 설정을 업데이트하기 전에도 이미지에서 누락되지 않습니다.
-  const other = groups.filter((group) => !known.has(group.id));
-  if (other.length) {
-    const fallback = { ko: "그 밖의 스페셜 유닛", en: "More Special Units", ja: "その他のスペシャルユニット" };
-    sections.push({ title: fallback[lang], groups: other });
-  }
+  // '나의 취향표' 화면과 PNG가 같은 유닛 묶음/표시 순서를 사용합니다.
+  const sections = groupSpecialUnits(groups, lang);
 
   const WIDTH = 1080;
   const OUTER = 42;

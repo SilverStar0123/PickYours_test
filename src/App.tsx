@@ -18,7 +18,7 @@ import { clearPendingCreateRoom, fetchRoom, getPendingCreateRoom, loadRoomCache,
 import { getServerErrorKind, isServerBusyNow, markServerBusy, serverBusyRemainingMs } from "./serverStatus";
 import { layoutLogos } from "./logoLayout";
 import { loadSheetAgencies } from "./csv";
-import { PICK_SHEETS, VISIBLE_PICK_SHEET_IDS, SPECIAL_UNITS, sheetFromHash, sheetLocalKey, type PickSheetId } from "./pickSheets";
+import { PICK_SHEETS, VISIBLE_PICK_SHEET_IDS, SPECIAL_UNITS, groupSpecialUnits, sheetFromHash, sheetLocalKey, type PickSheetId } from "./pickSheets";
 import { loadLocalNickname, loadLocalPicks, loadMyRooms, saveLocal, saveMyRooms } from "./storage";
 import { localizeAgencies } from "./localize";
 import { onAuthStateChanged, signInAnonymously } from "firebase/auth";
@@ -176,6 +176,13 @@ function PickYoursMain({ sheetId, onSwitchSheet }: {
   const [baseAgencies, setBaseAgencies] = useState<Agency[]>([]);
   const [sheetDataLoaded, setSheetDataLoaded] = useState(false); // CSV 그대로 (한국어 이름)
   const agencies = useMemo(() => localizeAgencies(baseAgencies, lang), [baseAgencies, lang]); // 화면 표시용
+  // 스페셜 유닛: 화면 미리보기와 저장 이미지가 동일한 섹션 구성을 사용합니다.
+  const specialSections = useMemo(
+    () => sheetId === "special"
+      ? groupSpecialUnits(agencies.flatMap((agency) => agency.groups), lang)
+      : [],
+    [agencies, lang, sheetId]
+  );
 
   const [preview, setPreview] = useState<{ src: string; blob: Blob; name: string } | null>(null); // 다운로드가 안 되는 환경용 안내 창
   const [savingImage, setSavingImage] = useState(false);
@@ -1168,7 +1175,7 @@ function PickYoursMain({ sheetId, onSwitchSheet }: {
           <section className="finish-section">
             <h2 className="finish-title">{t("myPicksTitle")}</h2>
             <div className="personal-wrap">
-              <div ref={personalRef} className={`personal-card${sheetId !== "current" ? " personal-card--collection" : ""}`}>
+              <div ref={personalRef} className={`personal-card${sheetId !== "current" ? " personal-card--collection" : ""}${sheetId === "special" ? " personal-card--special" : ""}`}>
                 {sheetId !== "current" && (
                   <div className="personal-collection-eyebrow">PICKYOURS · {titleForSheet(lang)}</div>
                 )}
@@ -1182,7 +1189,43 @@ function PickYoursMain({ sheetId, onSwitchSheet }: {
                      `${pickedCount} / ${totalGroups} selected`}
                   </div>
                 )}
-                <div className="personal-grid">
+                {sheetId === "special" ? (
+                  <div className="personal-special-sections">
+                    {specialSections.map((section, sectionIndex) => (
+                      <section key={section.id} className="personal-special-section" aria-label={section.title}>
+                        <div className="personal-special-section-heading">
+                          <span className="personal-special-section-number">
+                            {String(sectionIndex + 1).padStart(2, "0")}
+                          </span>
+                          <h4>{section.title}</h4>
+                          <span className="personal-special-section-count">{section.groups.length} UNITS</span>
+                        </div>
+                        <div className={`personal-special-picks${section.groups.length > 5 ? " personal-special-picks--six" : ""}`}>
+                          {section.groups.map((g) => {
+                            const m = memberMap[picks[g.id]];
+                            const pick = m && m.groupId === g.id ? m : undefined;
+                            return (
+                              <div key={g.id} className="personal-special-pick">
+                                <div className="personal-special-unit" title={g.name}>{g.name}</div>
+                                <div className="personal-special-photo">
+                                  {pick ? (
+                                    <img src={pick.img} alt={pick.name} onError={onImgError(pick.fallback)} />
+                                  ) : (
+                                    <span aria-label={lang === "ko" ? "미선택" : "Not selected"}>—</span>
+                                  )}
+                                </div>
+                                <div className="personal-special-name">
+                                  {pick?.name || (lang === "ko" ? "미선택" : "—")}
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </section>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="personal-grid">
                   {agencies.map((agency) => (
                     <div key={agency.id} className={`personal-agency${sheetId !== "current" ? " personal-agency--collection" : ""}`}>
                       {sheetId === "current" && (
@@ -1209,7 +1252,8 @@ function PickYoursMain({ sheetId, onSwitchSheet }: {
                       </div>
                     </div>
                   ))}
-                </div>
+                  </div>
+                )}
               </div>
             </div>
 

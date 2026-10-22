@@ -420,6 +420,129 @@ h1 {
   .personal-picks--collection { grid-template-columns: repeat(2, minmax(0,1fr)); gap: 9px; }
 }
 
+
+/* 스페셜 유닛: PNG 저장 이미지와 같은 세 섹션을 실제 화면에도 표시 */
+.personal-card--special {
+  width: min(1080px, 100%);
+  max-width: 100%;
+  padding: 32px 38px;
+}
+.personal-special-sections {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+.personal-special-section {
+  border: 1px solid #eee2e8;
+  border-radius: 20px;
+  background: #fff;
+  padding: 16px;
+  min-width: 0;
+}
+.personal-special-section-heading {
+  display: flex;
+  align-items: center;
+  gap: 13px;
+  margin-bottom: 16px;
+  min-width: 0;
+}
+.personal-special-section-number {
+  display: inline-flex;
+  justify-content: center;
+  align-items: center;
+  flex-shrink: 0;
+  border-radius: 8px;
+  background: #ac5772;
+  color: #fff;
+  width: 39px;
+  height: 30px;
+  font-size: .9rem;
+  font-weight: 700;
+}
+.personal-special-section-heading h4 {
+  margin: 0;
+  font-size: 1.2rem;
+  color: #453741;
+  font-weight: 700;
+}
+.personal-special-section-count {
+  margin-left: auto;
+  font-size: .75rem;
+  color: #ab9aa4;
+  white-space: nowrap;
+}
+.personal-special-picks {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 12px;
+}
+.personal-special-pick {
+  border: 1px solid #eee6ea;
+  border-radius: 13px;
+  background: #fefbfc;
+  min-width: 0;
+  padding: 7px 7px 12px;
+  text-align: center;
+}
+.personal-special-unit {
+  border-radius: 8px;
+  background: #f6e7ed;
+  color: #8e3958;
+  font-size: .81rem;
+  font-weight: 700;
+  padding: 10px 2px;
+  margin-bottom: 7px;
+  overflow-wrap: anywhere;
+  line-height: 1.25;
+  min-height: 37px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.personal-special-photo {
+  aspect-ratio: 1 / 1;
+  width: min(123px, 100%);
+  margin: 0 auto;
+  border-radius: 10px;
+  overflow: hidden;
+  background: #f0eaf0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #aca0a9;
+  font-size: 1.2rem;
+}
+.personal-special-photo img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.personal-special-name {
+  font-weight: 700;
+  color: #39343b;
+  font-size: .8rem;
+  margin-top: 9px;
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+  min-height: 1.4em;
+}
+@media (min-width: 1000px) {
+  .personal-special-picks--six {
+    grid-template-columns: repeat(6, minmax(0, 1fr));
+  }
+}
+@media (max-width: 760px) {
+  .personal-card--special { padding: 18px 14px; }
+  .personal-special-picks { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+  .personal-special-section { padding: 12px; }
+  .personal-special-section-heading h4 { font-size: 1rem; }
+}
+@media (max-width: 520px) {
+  .personal-special-picks { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .personal-special-section-count { font-size: .66rem; }
+  .personal-special-unit { font-size: .77rem; }
+}
+
 .nickname-row {
   display: flex;
   align-items: center;
