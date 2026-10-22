@@ -8,6 +8,7 @@ import { LANG_KEY, LOCALE, detectInitialLang, normalizeLang, translate } from ".
 import type { Lang, MsgKey } from "./i18n";
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import SongQuiz from "./SongQuiz";
+import { trackAnalyticsEvent } from "./analytics";
 import { auth, db } from "./firebaseClient";
 import { balancedMaxWidth, copyText, safeFileName, samePicks, withTimeout } from "./utils";
 import { blobToDataUrl, renderPersonalBlob, renderToBlob, triggerDownload } from "./imageExport";
@@ -87,6 +88,12 @@ export default function App() {
       window.removeEventListener("popstate", onRouteChange);
     };
   }, []);
+
+  // GA4 기본 page_view는 Analytics SDK가 자동 기록하므로 중복 전송하지 않습니다.
+  // 탭 간 이동은 별도 커스텀 이벤트로 구분합니다 (해시 기반 SPA).
+  useEffect(() => {
+    trackAnalyticsEvent("service_view", { service: activeTab });
+  }, [activeTab]);
 
   // ESC 키로 서랍 메뉴 닫기
   useEffect(() => {

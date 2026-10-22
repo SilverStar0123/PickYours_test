@@ -645,6 +645,12 @@
   margin: 24px 0 8px;
   text-align: left;
 }
+.sq-percentile {
+  margin: 12px 0;
+  font-weight: 700;
+  text-align: center;
+}
+
 .sq-score-box {
   margin: 18px 0 0;
   padding: 18px 16px 14px;

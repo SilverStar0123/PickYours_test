@@ -8,6 +8,12 @@ import { withTimeout, copyText } from "./utils";
 import { triggerDownload, blobToDataUrl } from "./imageExport";
 import { IN_APP_BROWSER } from "./config";
 import { calcQuestionScore, summarizeHistory } from "./quizScore";
+import { trackAnalyticsEvent } from "./analytics";
+import { generateRoomId } from "./rooms";
+import { saveQuizCompletion } from "./quizResults";
+import type { QuizPool } from "./quizResults";
+import { loadQuizPercentileData, calculateQuizPercentile } from "./quizPercentiles";
+import type { QuizPercentile } from "./quizPercentiles";
 import {
   QUIZ_SHARE_HASHTAGS,
   buildQuizShareUrl,
@@ -283,6 +289,11 @@ export default function SongQuiz({ agencies, lang, t }: SongQuizProps) {
   const [questionQueue, setQuestionQueue] = useState<SongItem[]>([]);
   const [questionIdx, setQuestionIdx] = useState<number>(0);
   const [history, setHistory] = useState<HistoryItem[]>([]);
+  const runIdRef = useRef("");
+  const completedRunRef = useRef("");
+  const runPoolRef = useRef<QuizPool>("all");
+  const [runPool, setRunPool] = useState<QuizPool>("all");
+  const [percentile, setPercentile] = useState<QuizPercentile | null>(null);
 
   // 현재 문제 상태
   const [currentSong, setCurrentSong] = useState<SongItem | null>(null);
@@ -684,6 +695,14 @@ export default function SongQuiz({ agencies, lang, t }: SongQuizProps) {
       queue.push(...batch);
     }
     const finalQueue = queue.slice(0, count);
+    // 선택 유닛 제한 여부는 시작 시점에 고정 (결과 통계의 비교군을 구분).
+    const pool: QuizPool = filteredSongs.length === songs.length ? "all" : "filtered";
+    runPoolRef.current = pool;
+    setRunPool(pool);
+    setPercentile(null);
+    runIdRef.current = generateRoomId();
+    completedRunRef.current = "";
+    trackAnalyticsEvent("quiz_started", { difficulty: easyMode ? "easy" : "hard", question_count: count, pool_type: pool });
     setQuestionQueue(finalQueue);
     setQuestionIdx(0);
     setHistory([]);
@@ -696,6 +715,23 @@ export default function SongQuiz({ agencies, lang, t }: SongQuizProps) {
     const nextIdx = questionIdx + 1;
     if (nextIdx >= questionQueue.length) {
       stopPlayerSafely();
+      const runId = runIdRef.current;
+      if (runId && completedRunRef.current !== runId && history.length === questionQueue.length) {
+        completedRunRef.current = runId; // 더블 클릭·중복 이벤트 방지
+        const summary = summarizeHistory(history, questionQueue.length);
+        const mode = easyMode ? "easy" : "hard";
+        const pool = runPoolRef.current;
+        trackAnalyticsEvent("quiz_completed", {
+          difficulty: mode, question_count: questionQueue.length,
+          pool_type: pool, score: summary.score
+        });
+        // 저장 실패해도 퀴즈 화면이나 결과 이미지에는 영향이 없어야 함.
+        void saveQuizCompletion({
+          attemptId: runId, mode, questionCount: questionQueue.length, pool,
+          score: summary.score, perfect: summary.perfect,
+          otherCorrect: summary.otherCorrect, giveup: summary.giveup
+        }).catch((err) => console.warn("퀴즈 익명 점수 저장 실패 (게임은 정상 진행):", err));
+      }
       setPhase("summary");
     } else {
       setQuestionIdx(nextIdx);
@@ -889,6 +925,19 @@ export default function SongQuiz({ agencies, lang, t }: SongQuizProps) {
     questionQueue.length > 0 ? Math.round((correctTotal / questionQueue.length) * 100) : 0;
   const scoreSummary = useMemo(() => summarizeHistory(history, questionQueue.length), [history, questionQueue.length]);
   const totalScore = scoreSummary.score;
+
+  // 배포된 분포 JSON이 활성화되기 전까지는 아무것도 표시하지 않음.
+  useEffect(() => {
+    if (phase !== "summary") return;
+    let cancelled = false;
+    void loadQuizPercentileData().then((data) => {
+      if (cancelled) return;
+      setPercentile(calculateQuizPercentile(
+        data, easyMode ? "easy" : "hard", questionQueue.length, runPool, totalScore
+      ));
+    });
+    return () => { cancelled = true; };
+  }, [phase, easyMode, questionQueue.length, runPool, totalScore]);
 
   // ───────── 결과 공유 (이미지 저장 · X 글쓰기 · 링크 복사) ─────────
   const [challenge, setChallenge] = useState<QuizResultInfo | null>(() => parseQuizChallenge(window.location.hash));
@@ -1211,6 +1260,7 @@ export default function SongQuiz({ agencies, lang, t }: SongQuizProps) {
           >
             {t("quizStartBtn", { n: targetQuestionCount })}
           </button>
+          <p className="sq-share-note">{t("quizStatsCollectionNotice")}</p>
         </section>
       )}
 
@@ -1442,6 +1492,12 @@ export default function SongQuiz({ agencies, lang, t }: SongQuizProps) {
               </li>
             </ul>
           </div>
+
+          {percentile && (
+            <p className="sq-percentile" role="status">
+              {t("quizTopPercentile", { percent: percentile.topPercent, samples: percentile.samples })}
+            </p>
+          )}
 
           <h3 className="sq-label sq-hist-head">
             {t("quizSummaryHistoryTitle")}

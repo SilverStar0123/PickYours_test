@@ -15,7 +15,7 @@ const firebaseConfig = {
   measurementId: "G-EJH36NK25P"
 };
 
-const app = initializeApp(firebaseConfig);
+export const app = initializeApp(firebaseConfig);
 
 // 로컬 개발(yarn start)에서는 디버그 토큰 사용 (배포된 사이트에는 영향 없음)
 if (process.env.NODE_ENV !== "production") {
