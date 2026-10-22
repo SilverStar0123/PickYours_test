@@ -20,7 +20,7 @@ function getAnalyticsSafely(): Promise<Analytics | null> {
 
 /** 숫자·모드 구분만 전송. 닉네임, 이메일, 방 ID, UID는 절대 전송하지 않음. */
 export function trackAnalyticsEvent(
-  eventName: "service_view" | "quiz_started" | "quiz_completed",
+  eventName: "service_view" | "pick_sheet_view" | "quiz_started" | "quiz_completed",
   params: Record<string, string | number>
 ): void {
   void getAnalyticsSafely().then((analytics) => {
