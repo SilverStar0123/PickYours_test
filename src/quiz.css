@@ -146,6 +146,38 @@
 .sq-link-btn:hover {
   text-decoration: underline;
 }
+/* 출제 유닛: 소속사별 카드 + 소속사가 없는 곡 분류 카드 */
+.sq-unit-groups {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+.sq-unit-group {
+  min-width: 0;
+  padding: 14px;
+  background: #fafbfc;
+  border: 1px solid var(--sq-line);
+  border-radius: 14px;
+}
+.sq-unit-group--other {
+  grid-column: 1 / -1;
+  background: #fff9f9;
+  border-color: #f3dfe3;
+}
+.sq-unit-group-title {
+  margin: 0 0 12px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--sq-line);
+  color: var(--sq-ink);
+  font-size: 0.84rem;
+  line-height: 1.5;
+  font-weight: 800;
+  overflow-wrap: anywhere;
+}
+.sq-unit-group--other .sq-unit-group-title {
+  color: var(--sq-accent-dark);
+  border-bottom-color: #f3dfe3;
+}
 .sq-chips {
   display: flex;
   flex-wrap: wrap;
@@ -1015,6 +1047,12 @@
 
 /* 좁은 화면 */
 @media (max-width: 520px) {
+  .sq-unit-groups {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .sq-unit-group {
+    padding: 12px;
+  }
   .sq-card {
     padding: 18px 16px;
     border-radius: 18px;

@@ -233,6 +233,13 @@ export default function SongQuiz({ lang, t }: SongQuizProps) {
     return base;
   }, [quizAgencies, songs, lang]);
 
+  // 정규 유닛은 현재 유닛의 소속사별로, 나머지는 별도 섹션에 표시합니다.
+  // 이 목록은 필터 UI 전용이므로 출제/정답 판정 및 선택 상태에 영향을 주지 않습니다.
+  const otherQuizUnits = useMemo(() => {
+    const categoryIds = new Set([SHUFFLE_UNIT_ID, FUSION_UNIT_ID, COLLAB_UNIT_ID, SOLO_UNIT_ID]);
+    return allUnits.filter((unit) => categoryIds.has(unit.id));
+  }, [allUnits]);
+
   const unitNameMap = useMemo(() => {
     const m: Record<string, string> = {};
     allUnits.forEach((g) => {
@@ -1200,21 +1207,49 @@ export default function SongQuiz({ lang, t }: SongQuizProps) {
                 </button>
               </div>
             </div>
-            <div className="sq-chips">
-              {allUnits.map((u) => {
-                const on = selectedUnits.has(u.id);
-                return (
-                  <button
-                    key={u.id}
-                    type="button"
-                    className={`sq-chip${on ? " is-on" : ""}`}
-                    aria-pressed={on}
-                    onClick={() => toggleUnit(u.id)}
-                  >
-                    {u.name} <small>{songCountByUnit[u.id] || 0}</small>
-                  </button>
-                );
-              })}
+            <div className="sq-unit-groups">
+              {quizAgencies.filter((agency) => agency.groups.length > 0).map((agency) => (
+                <section key={agency.id} className="sq-unit-group" aria-label={agency.name}>
+                  <h4 className="sq-unit-group-title">{agency.name}</h4>
+                  <div className="sq-chips">
+                    {agency.groups.map((unit) => {
+                      const on = selectedUnits.has(unit.id);
+                      return (
+                        <button
+                          key={unit.id}
+                          type="button"
+                          className={`sq-chip${on ? " is-on" : ""}`}
+                          aria-pressed={on}
+                          onClick={() => toggleUnit(unit.id)}
+                        >
+                          {unit.name} <small>{songCountByUnit[unit.id] || 0}</small>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </section>
+              ))}
+              {otherQuizUnits.length > 0 && (
+                <section className="sq-unit-group sq-unit-group--other" aria-label={t("quizOtherSongGroup")}>
+                  <h4 className="sq-unit-group-title">{t("quizOtherSongGroup")}</h4>
+                  <div className="sq-chips">
+                    {otherQuizUnits.map((unit) => {
+                      const on = selectedUnits.has(unit.id);
+                      return (
+                        <button
+                          key={unit.id}
+                          type="button"
+                          className={`sq-chip${on ? " is-on" : ""}`}
+                          aria-pressed={on}
+                          onClick={() => toggleUnit(unit.id)}
+                        >
+                          {unit.name} <small>{songCountByUnit[unit.id] || 0}</small>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </section>
+              )}
             </div>
           </div>
 
