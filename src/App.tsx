@@ -18,7 +18,7 @@ import { clearPendingCreateRoom, fetchRoom, getPendingCreateRoom, loadRoomCache,
 import { getServerErrorKind, isServerBusyNow, markServerBusy, serverBusyRemainingMs } from "./serverStatus";
 import { layoutLogos } from "./logoLayout";
 import { loadSheetAgencies } from "./csv";
-import { PICK_SHEETS, PICK_SHEET_IDS, SPECIAL_UNITS, sheetFromHash, sheetLocalKey, type PickSheetId } from "./pickSheets";
+import { PICK_SHEETS, VISIBLE_PICK_SHEET_IDS, SPECIAL_UNITS, sheetFromHash, sheetLocalKey, type PickSheetId } from "./pickSheets";
 import { loadLocalNickname, loadLocalPicks, loadMyRooms, saveLocal, saveMyRooms } from "./storage";
 import { localizeAgencies } from "./localize";
 import { onAuthStateChanged, signInAnonymously } from "firebase/auth";
@@ -1049,7 +1049,7 @@ function PickYoursMain({ sheetId, onSwitchSheet }: {
       {siteHeader}
       {activeTab === "picks" && (
         <nav className="pick-bookmark-nav" aria-label={lang === "ko" ? "취향표 종류" : "Pick sheet categories"}>
-          {PICK_SHEET_IDS.map((id) => (
+          {VISIBLE_PICK_SHEET_IDS.map((id) => (
             <button key={id} type="button"
               className={`pick-bookmark-tab${sheetId === id ? " active" : ""}`}
               aria-current={sheetId === id ? "page" : undefined}

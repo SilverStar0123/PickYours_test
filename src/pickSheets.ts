@@ -1,5 +1,10 @@
-// 취향표 종류와 고유 주소/저장 공간. 새 종류는 여기에서 추가합니다.
+// 취향표 종류 및 인덱스/멀티방 설정.
+// 각 취향표의 multiplayer / showInIndex를 true 또는 false로 바꾸면 됩니다.
+// - multiplayer: 공유방 생성·참여 UI 표시 여부
+// - showInIndex: 화면 위 책갈피 인덱스 표시 여부 (false여도 직접 링크는 열림)
+// 주의: multiplayer를 새로 활성화하는 경우 해당 Firestore 컬렉션의 보안 규칙이 필요합니다.
 export type PickSheetId = "current" | "special" | "shuffle1" | "shuffle2";
+
 export const SPECIAL_UNITS = [
   "데드맨즈", "구fine", "나이트 킬러즈", "team 우시와카마루", "트로이메라이",
   "Rain-bows", "Babarrier", "Lilith", "DoubleFace", "오기인",
@@ -10,17 +15,59 @@ export type PickSheet = {
   id: PickSheetId;
   source: "unit" | "ex_unit" | "shuffle1" | "shuffle2";
   multiplayer: boolean;
+  showInIndex: boolean;
   collection: string;
   route: string;
   labels: { ko: string; en: string; ja: string };
 };
+
 export const PICK_SHEETS: Record<PickSheetId, PickSheet> = {
-  current: { id: "current", source: "unit", multiplayer: true, collection: "rooms", route: "#/picks", labels: { ko: "현재 유닛", en: "Current Units", ja: "現行ユニット" } },
-  special: { id: "special", source: "ex_unit", multiplayer: true, collection: "specialRooms", route: "#/picks/special", labels: { ko: "스페셜 유닛", en: "Special Units", ja: "スペシャルユニット" } },
-  shuffle1: { id: "shuffle1", source: "shuffle1", multiplayer: false, collection: "", route: "#/picks/shuffle1", labels: { ko: "Shuffle 1", en: "Shuffle 1", ja: "Shuffle 1" } },
-  shuffle2: { id: "shuffle2", source: "shuffle2", multiplayer: false, collection: "", route: "#/picks/shuffle2", labels: { ko: "Shuffle 2", en: "Shuffle 2", ja: "Shuffle 2" } }
+  current: {
+    id: "current",
+    source: "unit",
+    multiplayer: true,
+    showInIndex: true,
+    collection: "rooms",
+    route: "#/picks",
+    labels: { ko: "현재 유닛", en: "Current Units", ja: "現行ユニット" }
+  },
+  special: {
+    id: "special",
+    source: "ex_unit",
+    multiplayer: true,
+    showInIndex: true,
+    collection: "specialRooms",
+    route: "#/picks/special",
+    labels: { ko: "스페셜 유닛", en: "Special Units", ja: "スペシャルユニット" }
+  },
+  shuffle1: {
+    id: "shuffle1",
+    source: "shuffle1",
+    multiplayer: false,
+    showInIndex: true,
+    // multiplayer를 true로 바꾸기 전에 shuffle1Rooms용 Firestore 규칙을 추가하세요.
+    collection: "shuffle1Rooms",
+    route: "#/picks/shuffle1",
+    labels: { ko: "Shuffle 1", en: "Shuffle 1", ja: "Shuffle 1" }
+  },
+  shuffle2: {
+    id: "shuffle2",
+    source: "shuffle2",
+    multiplayer: false,
+    showInIndex: true,
+    // multiplayer를 true로 바꾸기 전에 shuffle2Rooms용 Firestore 규칙을 추가하세요.
+    collection: "shuffle2Rooms",
+    route: "#/picks/shuffle2",
+    labels: { ko: "Shuffle 2", en: "Shuffle 2", ja: "Shuffle 2" }
+  }
 };
+
+// 내부용 전체 목록: 숨긴 취향표의 주소와 저장 데이터도 그대로 유지합니다.
 export const PICK_SHEET_IDS: PickSheetId[] = ["current", "special", "shuffle1", "shuffle2"];
+// 인덱스에 표시할 목록: showInIndex가 true인 종류만 보여 줍니다.
+export const VISIBLE_PICK_SHEET_IDS: PickSheetId[] = PICK_SHEET_IDS.filter(
+  (id) => PICK_SHEETS[id].showInIndex
+);
 
 // 해시 주소가 선택지를 명시하지 않는 경우(퀴즈 화면 등) null을 반환합니다.
 export function sheetFromHash(hash: string): PickSheetId | null {
