@@ -3,8 +3,8 @@ import type { Lang, MsgKey } from "./i18n";
 import type { Agency } from "./types";
 import { loadAgencies, loadCsv, stripQuotes } from "./csv";
 import { localizeAgencies } from "./localize";
-import { SHUFFLE_UNIT_ID, FUSION_UNIT_ID, classifyQuizUnit, makeOfficialUnitAliases } from "./quizUnits";
-export { SHUFFLE_UNIT_ID, FUSION_UNIT_ID } from "./quizUnits";
+import { SHUFFLE_UNIT_ID, FUSION_UNIT_ID, COLLAB_UNIT_ID, SOLO_UNIT_ID, classifyQuizSongUnit, makeOfficialUnitAliases, makeSoloArtistAliases } from "./quizUnits";
+export { SHUFFLE_UNIT_ID, FUSION_UNIT_ID, COLLAB_UNIT_ID, SOLO_UNIT_ID } from "./quizUnits";
 import "./quiz.css";
 import ImagePreviewModal from "./components/ImagePreviewModal";
 import { withTimeout, copyText } from "./utils";
@@ -30,7 +30,7 @@ import type { QuizResultInfo, ResultCardText, TopSongLine } from "./quizShare";
 
 export interface SongItem {
   id: string;
-  unit: string; // 셔플곡과 퓨전곡은 필터용 카테고리 ID로 묶음
+  unit: string; // 셔플곡/퓨전곡/콜라보곡/솔로곡은 필터용 카테고리 ID로 묶음
   rawUnit: string; // songs.csv에 적힌 원래 유닛명 (예: 'Ring.A.Bell', 'MODE/D')
   titleKo: string;
   titleEn: string;
@@ -213,7 +213,7 @@ export default function SongQuiz({ lang, t }: SongQuizProps) {
   const [countPreset, setCountPreset] = useState<5 | 10 | 30 | "custom">(10);
   const [customCountInput, setCustomCountInput] = useState<string>("15");
 
-  // 선택된 유닛 필터 (16개 정규 유닛 + 셔플곡 + 퓨전곡)
+  // 선택된 유닛 필터 (16개 정규 유닛 + 셔플곡 + 퓨전곡 + 콜라보곡 + 솔로곡)
   const allUnits = useMemo(() => {
     const base = quizAgencies.flatMap((a) => a.groups.map((g) => ({ id: g.id, name: g.name })));
     // 셔플곡이 1곡이라도 있으면 '셔플곡' 필터 버튼 추가
@@ -223,6 +223,12 @@ export default function SongQuiz({ lang, t }: SongQuizProps) {
     // 서로 다른 유닛이 함께 부른 퓨전곡을 하나의 버튼으로 묶음
     if (songs.some((s) => s.unit === FUSION_UNIT_ID)) {
       base.push({ id: FUSION_UNIT_ID, name: tRef.current("quizFusionUnit") });
+    }
+    if (songs.some((s) => s.unit === COLLAB_UNIT_ID)) {
+      base.push({ id: COLLAB_UNIT_ID, name: tRef.current("quizCollabUnit") });
+    }
+    if (songs.some((s) => s.unit === SOLO_UNIT_ID)) {
+      base.push({ id: SOLO_UNIT_ID, name: tRef.current("quizSoloUnit") });
     }
     return base;
   }, [quizAgencies, songs, lang]);
@@ -234,6 +240,8 @@ export default function SongQuiz({ lang, t }: SongQuizProps) {
     });
     m[SHUFFLE_UNIT_ID] = tRef.current("quizShuffleUnit");
     m[FUSION_UNIT_ID] = tRef.current("quizFusionUnit");
+    m[COLLAB_UNIT_ID] = tRef.current("quizCollabUnit");
+    m[SOLO_UNIT_ID] = tRef.current("quizSoloUnit");
     return m;
   }, [allUnits, lang]);
 
@@ -317,10 +325,13 @@ export default function SongQuiz({ lang, t }: SongQuizProps) {
       try {
         // 앱에서 현재 보고 있던 시트의 agencies를 받지 않고, 항상 unit 기반 16개 유닛을 로드합니다.
         // Firestore 요청은 발생하지 않으며 CSV는 배포 버전별 브라우저 캐시를 재사용합니다.
-        const [currentAgencies, songRows] = await Promise.all([loadAgencies(), loadCsv("songs.csv")]);
+        const [currentAgencies, memberRows, songRows] = await Promise.all([
+          loadAgencies(), loadCsv("ES_list.csv"), loadCsv("songs.csv")
+        ]);
         if (cancelled) return;
         setQuizBaseAgencies(currentAgencies);
         const officialAliases = makeOfficialUnitAliases(currentAgencies.flatMap((a) => a.groups));
+        const soloArtistAliases = makeSoloArtistAliases(memberRows);
 
         // 2) songs.csv 파싱 (영어명 등 일부 언어 제목이 비어 있어도 있는 제목으로 자동 보완)
         const parsed: SongItem[] = [];
@@ -331,13 +342,13 @@ export default function SongQuiz({ lang, t }: SongQuizProps) {
 
           const rawUnit = stripQuotes(r.unit || "") || "기타";
           // 원래 이름은 결과 화면에 남기고, 출제 필터에 사용하는 카테고리만 분류한다.
-          const unit = classifyQuizUnit(rawUnit, officialAliases);
-
+          // '콜라보곡' 6곡은 유닛 이름보다 곡 제목을 우선해 분류한다.
           const tKo = stripQuotes(r.title_ko || r.title || "");
           const tEn = stripQuotes(r.title_en || "");
           const tJa = stripQuotes(r.title_ja || "");
           const fallbackTitle = tKo || tEn || tJa;
           if (!fallbackTitle) return;
+          const unit = classifyQuizSongUnit(rawUnit, fallbackTitle, officialAliases, soloArtistAliases);
 
           const aliases = stripQuotes(r.aliases || "")
             .split(/[|,]/)
@@ -828,11 +839,11 @@ export default function SongQuiz({ lang, t }: SongQuizProps) {
     return others.length > 0 ? `${primary} (${others.join(" / ")})` : primary;
   };
 
-  // 셔플곡/퓨전곡의 정답 공개 시 원래 유닛 이름도 표시
+  // 셔플곡/퓨전곡/콜라보곡/솔로곡의 정답 공개 시 원래 유닛/가수 이름도 표시
   const formatFullUnitLabel = (s: SongItem): string => {
     const baseLabel = unitNameMap[s.unit] || s.unit;
-    if ((s.unit === SHUFFLE_UNIT_ID || s.unit === FUSION_UNIT_ID) &&
-        s.rawUnit && !["셔플곡", "셔플 유닛", "shuffle", "퓨전곡", "fusion", "fusion unit"].includes(s.rawUnit.toLowerCase())) {
+    if ((s.unit === SHUFFLE_UNIT_ID || s.unit === FUSION_UNIT_ID || s.unit === COLLAB_UNIT_ID || s.unit === SOLO_UNIT_ID) &&
+        s.rawUnit && !["셔플곡", "셔플 유닛", "shuffle", "퓨전곡", "fusion", "fusion unit", "콜라보곡", "콜라보", "collab", "collaboration", "솔로곡", "solo", "solo song"].includes(s.rawUnit.toLowerCase())) {
       return `${baseLabel} (${s.rawUnit})`;
     }
     return baseLabel;
