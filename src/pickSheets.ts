@@ -6,10 +6,9 @@
 export type PickSheetId = "current" | "special" | "shuffle1" | "shuffle2";
 
 export const SPECIAL_UNITS = [
-  "Eve", "Adam", "J&A",
+  "Eve", "Adam", "J&A", "프로듀서", "슈퍼 아이돌",
   "데드맨즈", "구fine", "Knight Killers", "team 우시와카마루", "트로이메라이",
-  "Rain-bows", "Ba-barrier", "Lilith", "Double Face", "오기인",
-  "구Valkyrie", "프로듀서"
+  "Rain-bows", "Ba-barrier", "Lilith", "Double Face", "오기인", "구Valkyrie"
 ] as const;
 
 export type PickSheet = {
