@@ -144,3 +144,44 @@ export function generateRoomId(): string {
   crypto.getRandomValues(bytes);
   return Array.from(bytes, (b) => (b % 36).toString(36)).join("");
 }
+
+// 새 방 생성 요청이 시간 초과되더라도 같은 ID로 확인/재시도해 중복 방 생성을 방지
+// 실제 저장에 성공했는지 확인하기 전까지 마지막 생성 시도의 ID를 기기에 남긴다.
+const PENDING_ROOM_KEY = "es_pending_room_v1";
+let pendingInMemory: { uid: string; signature: string; rid: string } | null = null;
+
+export function getPendingCreateRoom(uid: string, signature: string): { rid: string; reused: boolean } {
+  try {
+    const raw = window.localStorage.getItem(PENDING_ROOM_KEY);
+    if (raw) {
+      const previous = JSON.parse(raw);
+      if (previous?.uid === uid && previous?.signature === signature &&
+          typeof previous?.rid === "string" && ROOM_ID_PATTERN.test(previous.rid)) {
+        return { rid: previous.rid, reused: true };
+      }
+    }
+  } catch {
+    if (pendingInMemory?.uid === uid && pendingInMemory.signature === signature) {
+      return { rid: pendingInMemory.rid, reused: true };
+    }
+  }
+  const rid = generateRoomId();
+  const pending = { uid, signature, rid };
+  pendingInMemory = pending;
+  try {
+    window.localStorage.setItem(PENDING_ROOM_KEY, JSON.stringify(pending));
+  } catch {
+    // 로컬 저장소를 사용할 수 없으면 같은 탭에서만 ID를 재사용
+  }
+  return { rid, reused: false };
+}
+
+export function clearPendingCreateRoom(rid: string): void {
+  if (pendingInMemory?.rid === rid) pendingInMemory = null;
+  try {
+    const raw = window.localStorage.getItem(PENDING_ROOM_KEY);
+    if (raw && JSON.parse(raw)?.rid === rid) window.localStorage.removeItem(PENDING_ROOM_KEY);
+  } catch {
+    // localStorage 사용 불가
+  }
+}

@@ -1,25 +1,45 @@
-// 서버 혼잡(무료 한도 초과 등) 판정
-import { SERVER_BUSY_KEY, SERVER_BUSY_MS } from "./config";
+// 오류별 재시도 간격: 일시적인 네트워크 장애까지 10분간 막지 않도록 분리
+import {
+  DEADLINE_RETRY_MS, QUOTA_RETRY_MS, SERVER_BUSY_KEY, UNAVAILABLE_RETRY_MS
+} from "./config";
 import { saveLocal } from "./storage";
 
-export function isServerBusyError(err: unknown): boolean {
-  const code = (err as { code?: string })?.code;
-  return (
-    code === "resource-exhausted" ||
-    code === "unavailable" ||
-    code === "deadline-exceeded" ||
-    (err as Error)?.message === "timeout"
-  );
+export type ServerErrorKind = "quota" | "unavailable" | "deadline" | "timeout" | "other";
+
+export function getServerErrorKind(err: unknown): ServerErrorKind {
+  const code = (err as { code?: string } | null)?.code;
+  if (code === "resource-exhausted") return "quota";
+  if (code === "unavailable") return "unavailable";
+  if (code === "deadline-exceeded") return "deadline";
+  if ((err as { message?: string } | null)?.message === "timeout") return "timeout";
+  return "other";
 }
 
-export function isServerBusyNow(): boolean {
+export function isServerBusyError(err: unknown): boolean {
+  return getServerErrorKind(err) !== "other";
+}
+
+export function retryDelayMs(kind: ServerErrorKind): number {
+  if (kind === "quota") return QUOTA_RETRY_MS;
+  if (kind === "unavailable") return UNAVAILABLE_RETRY_MS;
+  if (kind === "deadline") return DEADLINE_RETRY_MS;
+  return 0; // 타임아웃·권한 오류·기타 오류는 자동 차단하지 않음
+}
+
+export function serverBusyRemainingMs(): number {
   try {
-    return Number(window.localStorage.getItem(SERVER_BUSY_KEY) || 0) > Date.now();
+    return Math.max(0, Number(window.localStorage.getItem(SERVER_BUSY_KEY) || 0) - Date.now()) || 0;
   } catch {
-    return false;
+    return 0;
   }
 }
 
-export function markServerBusy() {
-  saveLocal(SERVER_BUSY_KEY, String(Date.now() + SERVER_BUSY_MS));
+export function isServerBusyNow(): boolean {
+  return serverBusyRemainingMs() > 0;
+}
+
+export function markServerBusy(err: unknown): number {
+  const delay = retryDelayMs(getServerErrorKind(err));
+  if (delay > 0) saveLocal(SERVER_BUSY_KEY, String(Date.now() + delay));
+  return delay;
 }

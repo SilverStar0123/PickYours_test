@@ -13,8 +13,8 @@ import { balancedMaxWidth, copyText, safeFileName, samePicks, withTimeout } from
 import { blobToDataUrl, renderPersonalBlob, renderToBlob, triggerDownload } from "./imageExport";
 import { computeMatches } from "./matching";
 import { doc, getDocFromServer, serverTimestamp, setDoc, updateDoc, writeBatch } from "firebase/firestore";
-import { fetchRoom, generateRoomId, loadRoomCache, parseRoomId, parseUserDoc, saveRoomCache } from "./rooms";
-import { isServerBusyError, isServerBusyNow, markServerBusy } from "./serverStatus";
+import { clearPendingCreateRoom, fetchRoom, getPendingCreateRoom, loadRoomCache, parseRoomId, parseUserDoc, saveRoomCache } from "./rooms";
+import { getServerErrorKind, isServerBusyNow, markServerBusy, serverBusyRemainingMs } from "./serverStatus";
 import { layoutLogos } from "./logoLayout";
 import { loadAgencies } from "./csv";
 import { loadLocalNickname, loadLocalPicks, loadMyRooms, saveLocal, saveMyRooms } from "./storage";
@@ -133,6 +133,17 @@ export default function App() {
   const [savingImage, setSavingImage] = useState(false);
   const transferApplied = useRef(false);
   const [serverBusy, setServerBusy] = useState<boolean>(() => isServerBusyNow());
+  // 짧은 네트워크 장애 제한이 끝나면 안내 문구도 자동으로 사라지게 처리
+  useEffect(() => {
+    if (!serverBusy) return;
+    const remaining = serverBusyRemainingMs();
+    if (remaining <= 0) {
+      setServerBusy(false);
+      return;
+    }
+    const timer = window.setTimeout(() => setServerBusy(false), remaining + 100);
+    return () => window.clearTimeout(timer);
+  }, [serverBusy]);
   const lastSubmitAt = useRef(0);
   const boardRef = useRef<HTMLDivElement>(null);
   const personalRef = useRef<HTMLDivElement>(null);
@@ -564,9 +575,14 @@ export default function App() {
       nicknameRef.current?.focus();
       return;
     }
-    if (isServerBusyNow()) {
+    const remainingMs = serverBusyRemainingMs();
+    if (remainingMs > 0) {
       setServerBusy(true);
-      alert(t("serverBusyMsg"));
+      if (remainingMs > 60 * 1000) {
+        alert(t("alertRetryMinutes", { minutes: Math.ceil(remainingMs / (60 * 1000)) }));
+      } else {
+        alert(t("alertRetrySeconds", { seconds: Math.ceil(remainingMs / 1000) }));
+      }
       return;
     }
     if (!uid) {
@@ -594,10 +610,17 @@ export default function App() {
 
     setSubmitting(true);
     try {
-      const rid = roomId ?? generateRoomId();
       const cleanPicks: Picks = {};
       Object.entries(picks).forEach(([g, m]) => {
         if (validGroupIds.has(g)) cleanPicks[g] = m;
+      });
+
+      const creating = !roomId;
+      const newRoomName = roomNameInput.trim().slice(0, MAX_ROOM_NAME);
+      // 동일 내용의 미확정 새 방 생성은 같은 ID로 재시도 (정상적인 다른 새 방 생성은 새 ID)
+      const createSignature = JSON.stringify({
+        nickname: trimmedName, name: newRoomName,
+        picks: Object.keys(cleanPicks).sort().map((g) => [g, cleanPicks[g]])
       });
 
       // 이미 같은 내용으로 제출돼 있으면 서버에 쓰지 않음 (쓰기 절약)
@@ -611,6 +634,9 @@ export default function App() {
         return;
       }
 
+      const pending = creating ? getPendingCreateRoom(uid, createSignature) : null;
+      const rid = roomId ?? pending!.rid;
+
       // 문서 id = 내 uid → 내 데이터만 쓸 수 있고, 닉네임이 같아도 서로 다른 문서로 저장됨
       const userRef = doc(db, "rooms", rid, "users", uid);
       const userData = {
@@ -620,16 +646,39 @@ export default function App() {
         joinedAt: roomUsers[uid]?.joinedTs ?? serverTimestamp()
       };
 
-      const creating = !roomId;
-      const newRoomName = roomNameInput.trim().slice(0, MAX_ROOM_NAME);
-      if (creating) {
-        // 새 방: 방 정보(이름, 만든 사람)와 내 기록을 한 번에(둘 다 성공하거나 둘 다 실패) 저장
-        const batch = writeBatch(db);
-        batch.set(doc(db, "rooms", rid), { name: newRoomName, ownerUid: uid });
-        batch.set(userRef, userData);
-        await withTimeout(batch.commit(), 12000);
-      } else {
-        await withTimeout(setDoc(userRef, userData), 12000);
+      // 새 방 생성에 사용한 ID가 서버에 이미 존재하는지 확인.
+      // 타임아웃으로 커밋만 뒤늦게 성공했을 때 다시 덮어쓰지 않는다.
+      const alreadySaved = async (): Promise<boolean> => {
+        const snap = await withTimeout(getDocFromServer(userRef), 7000);
+        if (!snap.exists()) return false;
+        const mine = parseUserDoc(snap.data());
+        return !!mine?.joinedTs && mine.nickname === trimmedName && samePicks(mine.picks, cleanPicks);
+      };
+
+      let writeConfirmed = false;
+      if (creating && pending?.reused) {
+        // 저장 확인이 불가능한 상태라면 새 커밋을 보내지 않아 중복/충돌 위험을 줄임
+        writeConfirmed = await alreadySaved();
+      }
+      if (!writeConfirmed) {
+        try {
+          if (creating) {
+            // 새 방과 내 기록을 한 번의 원자적 배치로 저장
+            const batch = writeBatch(db);
+            batch.set(doc(db, "rooms", rid), { name: newRoomName, ownerUid: uid });
+            batch.set(userRef, userData);
+            await withTimeout(batch.commit(), 12000);
+          } else {
+            await withTimeout(setDoc(userRef, userData), 12000);
+          }
+        } catch (err) {
+          // 응답만 늦고 실제 저장은 성공했을 수 있음. 새 방은 동일 ID의 저장 여부를 검사.
+          // 확인 자체가 실패하면 pending ID를 유지하므로 다음 시도에도 다른 방을 만들지 않음.
+          if (!creating) throw err;
+          let confirmed = false;
+          try { confirmed = await alreadySaved(); } catch { /* 다음 시도에서 같은 ID로 재확인 */ }
+          if (!confirmed) throw err;
+        }
       }
 
       sendAnonymousStats(cleanPicks, uid, validGroupIds, lang);
@@ -689,14 +738,20 @@ export default function App() {
           setRoomRefreshTick((t) => t + 1);
         }
       }
+      if (creating) clearPendingCreateRoom(rid);
       setNickname(trimmedName);
       setShowResult(true);
     } catch (err) {
       console.error("제출 에러:", (err as { code?: string })?.code, err);
-      if (isServerBusyError(err)) {
-        markServerBusy();
-        setServerBusy(true);
+      const kind = getServerErrorKind(err);
+      const delay = markServerBusy(err);
+      if (delay > 0) setServerBusy(true);
+      if (kind === "quota") {
         alert(t("serverBusyMsg"));
+      } else if (kind === "unavailable" || kind === "deadline") {
+        alert(t("alertNetworkRetry", { seconds: Math.ceil(delay / 1000) }));
+      } else if (kind === "timeout") {
+        alert(t("alertSaveUncertain"));
       } else {
         alert(t("alertSaveError"));
       }

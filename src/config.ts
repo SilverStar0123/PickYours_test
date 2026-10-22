@@ -80,9 +80,13 @@ export const PICKS_KEY = "es_my_picks";
 export const NICK_KEY = "es_my_nickname";
 
 // 서버 혼잡(무료 한도 초과 등) 처리
-export const SERVER_BUSY_KEY = "es_server_busy_until";
+// 기존의 '모든 장애 10분 차단' 키와 구분 (기존 10분 제한을 새 버전에서 승계하지 않음)
+export const SERVER_BUSY_KEY = "es_server_busy_until_v2";
 
-export const SERVER_BUSY_MS = 10 * 60 * 1000; // 혼잡 판정 후 이 시간 동안은 서버 저장을 시도하지 않음
+export const QUOTA_RETRY_MS = 10 * 60 * 1000; // 실제 할당량 초과: 10분
+export const UNAVAILABLE_RETRY_MS = 30 * 1000; // 일시적 서버/네트워크 장애: 30초
+export const DEADLINE_RETRY_MS = 15 * 1000; // Firebase 응답 지연: 15초
+// 자체 타임아웃: 차단 없음. 실제 쓰기 성공 여부를 별도로 확인한 뒤 재시도 가능.
 
 // 이미지 저장 설정
 export const IMAGE_SCALE = 2;

@@ -135,6 +135,10 @@ const ko = {
     "이 방은 이전 버전에서 만들어져 내 기록을 수정할 수 없어요. 결과는 볼 수 있고, 수정하려면 '새 방 만들기'로 새로 제출해주세요.",
   alertSubmitCooldown: "방금 제출했어요. 잠시 후 다시 눌러주세요.",
   alertSaveError: "저장 중 오류가 발생했습니다. 네트워크 상태를 확인한 뒤 다시 시도해주세요.",
+  alertNetworkRetry: "일시적인 통신 장애로 저장에 실패했어요. 약 {seconds}초 후 다시 시도해주세요.",
+  alertRetryMinutes: "서버 재시도 대기 중이에요. 약 {minutes}분 후 다시 시도해주세요. 이미지 저장은 계속 가능해요.",
+  alertRetrySeconds: "서버 재시도 대기 중이에요. 약 {seconds}초 후 다시 시도해주세요. 이미지 저장은 계속 가능해요.",
+  alertSaveUncertain: "서버 응답이 늦어 저장 여부를 확인하지 못했어요. 다시 시도하면 기존 방 ID로 저장 여부를 확인해 중복 생성을 방지해요.",
   alertLinkCopied: "공유 링크가 복사되었습니다!",
   alertLinkCopyFailed: "복사에 실패했습니다. 주소창의 링크를 직접 복사해주세요.",
   confirmNewRoom:
@@ -340,6 +344,10 @@ const en: Record<MsgKey, string> = {
     "This room was created with an earlier version, so you can't edit your entry. You can still view the results; to change your picks, submit again in a new room via “Create a new room”.",
   alertSubmitCooldown: "You just submitted. Please wait a moment and try again.",
   alertSaveError: "An error occurred while saving. Check your network connection and try again.",
+  alertNetworkRetry: "Temporary connection issue. Please try again in about {seconds} seconds.",
+  alertRetryMinutes: "Please wait about {minutes} minutes before retrying. Image saving still works.",
+  alertRetrySeconds: "Please wait about {seconds} seconds before retrying. Image saving still works.",
+  alertSaveUncertain: "The server response timed out. Retry to check the same room ID before creating another room.",
   alertLinkCopied: "Share link copied!",
   alertLinkCopyFailed: "Copy failed. Please copy the link from the address bar.",
   confirmNewRoom:
@@ -543,6 +551,10 @@ const ja: Record<MsgKey, string> = {
     "このルームは以前のバージョンで作られたため、自分の記録は編集できません。結果は閲覧できます。編集するには「新しいルームを作る」から新しく提出してください。",
   alertSubmitCooldown: "いま提出したばかりです。少し待ってからもう一度押してください。",
   alertSaveError: "保存中にエラーが発生しました。ネットワーク状態を確認してから、もう一度お試しください。",
+  alertNetworkRetry: "一時的な通信エラーです。約{seconds}秒後に再度お試しください。",
+  alertRetryMinutes: "再試行まで約{minutes}分お待ちください。画像の保存は引き続き利用できます。",
+  alertRetrySeconds: "再試行まで約{seconds}秒お待ちください。画像の保存は引き続き利用できます。",
+  alertSaveUncertain: "サーバーの応答が遅く、保存されたか確認できませんでした。再試行時は同じルームIDを確認し、重複作成を防ぎます。",
   alertLinkCopied: "共有リンクをコピーしました！",
   alertLinkCopyFailed: "コピーに失敗しました。アドレスバーのリンクを直接コピーしてください。",
   confirmNewRoom:
