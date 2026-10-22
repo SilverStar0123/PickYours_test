@@ -1341,3 +1341,58 @@ h1 {
     padding: 5px 9px;
   }
 }
+
+/* 취향표 책갈피 인덱스: 위 모서리만 둥글고 아래쪽은 본문에 붙임 */
+.pick-bookmark-nav {
+  display: flex;
+  align-items: flex-end;
+  gap: 4px;
+  width: max-content;
+  max-width: 100%;
+  overflow-x: auto;
+  overflow-y: hidden;
+  margin: 18px 0 18px;
+  padding: 5px 2px 0;
+  border-bottom: 2px solid #ed7a89;
+  scrollbar-width: thin;
+}
+.pick-bookmark-tab {
+  flex: 0 0 auto;
+  border: 1px solid #f2b5bc;
+  border-bottom: 0;
+  border-radius: 12px 12px 0 0;
+  background: #ffe6e9;
+  color: #a83f52;
+  font: inherit;
+  font-size: .82rem;
+  font-weight: 600;
+  white-space: nowrap;
+  padding: 10px 14px;
+  min-height: 39px;
+  cursor: pointer;
+}
+.pick-bookmark-tab:hover { background: #ffd7de; }
+.pick-bookmark-tab.active {
+  background: #fff;
+  color: #df5066;
+  border-color: #ed7a89;
+  box-shadow: inset 0 3px #e6697b;
+}
+.pick-bookmark-tab:focus-visible { outline: 2px solid #af304a; outline-offset: 1px; }
+.pick-bookmark-empty {
+  padding: 24px;
+  margin: 20px 0;
+  background: #fff;
+  border-radius: 14px;
+  text-align: center;
+  color: #666;
+}
+.pick-bookmark-unit-tags { display: flex; flex-wrap: wrap; gap: 7px; justify-content: center; }
+.pick-bookmark-unit-tags span {
+  padding: 6px 10px;
+  background: #fff3f5;
+  border: 1px solid #f0b8c1;
+  border-radius: 12px;
+  color: #af5160;
+  font-size: .77rem;
+}

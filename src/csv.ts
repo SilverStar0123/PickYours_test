@@ -1,5 +1,6 @@
 // CSV 읽기, ES_list.csv/units.csv → 소속사·유닛·멤버 목록 만들기
-import type { Agency, Group, NameMap } from "./types";
+import type { Agency, Group, NameMap, Member } from "./types";
+import { PICK_SHEETS, SPECIAL_UNITS, type PickSheetId } from "./pickSheets";
 import { LOGO_IMG_DIR, MEMBER_IMG_DIR, agencyConfig } from "./config";
 import Papa from "papaparse";
 import { avatarUri, badgeUri, resolveAsset, resolveImg } from "./assets";
@@ -104,4 +105,67 @@ export async function loadAgencies(): Promise<Agency[]> {
     };
   });
   return parsed;
+}
+
+
+// ex_unit / shuffle1 / shuffle2를 새 취향표에 표시합니다.
+// 한 사람이 여러 유닛에 속하면 '유닛A|유닛B'로 입력합니다.
+export function splitSheetUnits(value: string): string[] {
+  return Array.from(new Set(stripQuotes(value).split("|").map((x) => x.trim()).filter(Boolean)));
+}
+
+export async function loadSheetAgencies(sheet: PickSheetId): Promise<Agency[]> {
+  if (sheet === "current") return loadAgencies();
+  const source = PICK_SHEETS[sheet].source;
+  const [rows, unitRows, imageRows] = await Promise.all([
+    loadCsv("ES_list.csv"),
+    loadCsv("units.csv").catch(() => []),
+    sheet === "special" ? loadCsv("ex_unit_images.csv").catch(() => []) : Promise.resolve([])
+  ]);
+  if (rows.length && !rows[0].name && !rows[0].unit) {
+    throw Object.assign(new Error("csv-path"), { code: "csv-path" });
+  }
+  const logoMap: Record<string, string> = {};
+  const namesMap: Record<string, NameMap> = {};
+  unitRows.forEach((r) => {
+    if (!("unit" in r)) return;
+    const id = stripQuotes(r.unit).toLowerCase();
+    if (!id) return;
+    const logo = resolveImg(stripQuotes(r.logo), LOGO_IMG_DIR);
+    if (logo) logoMap[id] = logo;
+    namesMap[id] = { en: stripQuotes(r.name_en), ja: stripQuotes(r.name_ja) };
+  });
+  const overrides = new Map<string, string>();
+  imageRows.forEach((r) => {
+    if (!("name" in r) || !("ex_unit" in r)) return;
+    const name = stripQuotes(r.name), unit = stripQuotes(r.ex_unit), img = stripQuotes(r.img);
+    if (name && unit && img) overrides.set(`${unit}::${name}`, img);
+  });
+  const names = sheet === "special"
+    ? [...SPECIAL_UNITS]
+    : Array.from(new Set(rows.flatMap((r) => splitSheetUnits(r[source] || ""))));
+  const groups: Group[] = names.flatMap((unit) => {
+    const roster = rows.filter((r) => splitSheetUnits(r[source] || "").includes(unit));
+    if (!roster.length) return []; // CSV가 준비되지 않은 팀은 빈 선택지로 표시하지 않음
+    const unique = new Set<string>();
+    const members: Member[] = roster.map((r) => {
+      const name = stripQuotes(r.name) || "알수없음";
+      let id = `${unit}::${name}`;
+      for (let n = 2; unique.has(id); n++) id = `${unit}::${name}#${n}`;
+      unique.add(id);
+      const fallback = avatarUri(name);
+      const chosenImg = overrides.get(`${unit}::${name}`) || stripQuotes(r.img);
+      return {
+        id, groupId: unit, name,
+        names: { en: stripQuotes(r.name_en), ja: stripQuotes(r.name_ja) },
+        img: resolveImg(chosenImg, MEMBER_IMG_DIR) || fallback, fallback
+      };
+    });
+    return [{ id: unit, name: unit, names: namesMap[unit.toLowerCase()],
+      logo: logoMap[unit.toLowerCase()] || badgeUri(unit, 120, 120, true), members }];
+  });
+  if (!groups.length) return [];
+  const name = PICK_SHEETS[sheet].labels.ko;
+  return [{ id: `sheet-${sheet}`, name,
+    logo: badgeUri(name, 240, 48, false), groups }];
 }

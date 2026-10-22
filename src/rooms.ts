@@ -5,6 +5,7 @@ import {
   ROOM_CACHE_PREFIX, ROOM_ID_PATTERN
 } from "./config";
 import type { Picks, RoomData, RoomUsers, UserDoc } from "./types";
+import { PICK_SHEETS, sheetLocalKey, type PickSheetId } from "./pickSheets";
 import { Timestamp, collection, doc, getDoc, getDocs, limit, orderBy, query } from "firebase/firestore";
 import { db, legacyAuth, legacyDb } from "./firebaseClient";
 import { signInAnonymously } from "firebase/auth";
@@ -36,7 +37,7 @@ export function parseUserDoc(data: DocumentData): UserDoc | null {
   };
 }
 
-export function saveRoomCache(rid: string, d: RoomData) {
+export function saveRoomCache(rid: string, d: RoomData, sheet: PickSheetId = "current") {
   try {
     const users: Record<string, unknown> = {};
     Object.entries(d.users).forEach(([id, u]) => {
@@ -48,26 +49,26 @@ export function saveRoomCache(rid: string, d: RoomData) {
       };
     });
     window.localStorage.setItem(
-      ROOM_CACHE_PREFIX + rid,
+      sheetLocalKey(ROOM_CACHE_PREFIX, sheet) + rid,
       JSON.stringify({ source: d.source, at: d.at, name: d.name, ownerUid: d.ownerUid, users })
     );
     let index: string[] = [];
     try {
-      index = JSON.parse(window.localStorage.getItem(ROOM_CACHE_INDEX) || "[]");
+      index = JSON.parse(window.localStorage.getItem(sheetLocalKey(ROOM_CACHE_INDEX, sheet)) || "[]");
     } catch {
       index = [];
     }
     index = [rid, ...index.filter((x) => x !== rid)];
-    index.slice(ROOM_CACHE_KEEP).forEach((old) => window.localStorage.removeItem(ROOM_CACHE_PREFIX + old));
-    window.localStorage.setItem(ROOM_CACHE_INDEX, JSON.stringify(index.slice(0, ROOM_CACHE_KEEP)));
+    index.slice(ROOM_CACHE_KEEP).forEach((old) => window.localStorage.removeItem(sheetLocalKey(ROOM_CACHE_PREFIX, sheet) + old));
+    window.localStorage.setItem(sheetLocalKey(ROOM_CACHE_INDEX, sheet), JSON.stringify(index.slice(0, ROOM_CACHE_KEEP)));
   } catch {
     /* 저장 공간이 부족하거나 쓸 수 없으면 캐시만 건너뜀 */
   }
 }
 
-export function loadRoomCache(rid: string): RoomData | null {
+export function loadRoomCache(rid: string, sheet: PickSheetId = "current"): RoomData | null {
   try {
-    const raw = window.localStorage.getItem(ROOM_CACHE_PREFIX + rid);
+    const raw = window.localStorage.getItem(sheetLocalKey(ROOM_CACHE_PREFIX, sheet) + rid);
     if (!raw) return null;
     const o = JSON.parse(raw);
     if (!o || typeof o !== "object" || typeof o.at !== "number") return null;
@@ -96,11 +97,11 @@ export function loadRoomCache(rid: string): RoomData | null {
   }
 }
 
-async function fetchRoomFrom(dbx: Firestore, rid: string, source: "main" | "legacy"): Promise<RoomData> {
+async function fetchRoomFrom(dbx: Firestore, rid: string, source: "main" | "legacy", collectionName: string): Promise<RoomData> {
   const [meta, snap] = await Promise.all([
-    getDoc(doc(dbx, "rooms", rid)),
+    getDoc(doc(dbx, collectionName, rid)),
     getDocs(
-      query(collection(dbx, "rooms", rid, "users"), orderBy("joinedAt"), limit(MAX_USERS_PER_ROOM))
+      query(collection(dbx, collectionName, rid, "users"), orderBy("joinedAt"), limit(MAX_USERS_PER_ROOM))
     )
   ]);
   const users: RoomUsers = {};
@@ -118,15 +119,15 @@ async function fetchRoomFrom(dbx: Firestore, rid: string, source: "main" | "lega
   };
 }
 
-export async function fetchRoom(rid: string): Promise<RoomData> {
-  const main = await fetchRoomFrom(db, rid, "main");
+export async function fetchRoom(rid: string, sheet: PickSheetId = "current"): Promise<RoomData> {
+  const main = await fetchRoomFrom(db, rid, "main", PICK_SHEETS[sheet].collection);
   if (Object.keys(main.users).length > 0) return main;
   // 새 서버에 없는 방이면 이전 서버(읽기 전용)에서 찾아봄 (이전 서버를 설정한 경우에만)
-  if (!legacyDb || !legacyAuth) return main;
+  if (sheet !== "current" || !legacyDb || !legacyAuth) return main;
   try {
     await legacyAuth.authStateReady();
     if (!legacyAuth.currentUser) await signInAnonymously(legacyAuth);
-    const legacy = await fetchRoomFrom(legacyDb, rid, "legacy");
+    const legacy = await fetchRoomFrom(legacyDb, rid, "legacy", "rooms");
     if (Object.keys(legacy.users).length > 0) return legacy;
   } catch (err) {
     console.warn("이전 서버 조회 실패:", err);
@@ -148,11 +149,11 @@ export function generateRoomId(): string {
 // 새 방 생성 요청이 시간 초과되더라도 같은 ID로 확인/재시도해 중복 방 생성을 방지
 // 실제 저장에 성공했는지 확인하기 전까지 마지막 생성 시도의 ID를 기기에 남긴다.
 const PENDING_ROOM_KEY = "es_pending_room_v1";
-let pendingInMemory: { uid: string; signature: string; rid: string } | null = null;
+let pendingInMemory: { uid: string; signature: string; rid: string; sheet: PickSheetId } | null = null;
 
-export function getPendingCreateRoom(uid: string, signature: string): { rid: string; reused: boolean } {
+export function getPendingCreateRoom(uid: string, signature: string, sheet: PickSheetId = "current"): { rid: string; reused: boolean } {
   try {
-    const raw = window.localStorage.getItem(PENDING_ROOM_KEY);
+    const raw = window.localStorage.getItem(sheetLocalKey(PENDING_ROOM_KEY, sheet));
     if (raw) {
       const previous = JSON.parse(raw);
       if (previous?.uid === uid && previous?.signature === signature &&
@@ -161,26 +162,26 @@ export function getPendingCreateRoom(uid: string, signature: string): { rid: str
       }
     }
   } catch {
-    if (pendingInMemory?.uid === uid && pendingInMemory.signature === signature) {
+    if (pendingInMemory?.uid === uid && pendingInMemory.sheet === sheet && pendingInMemory.signature === signature) {
       return { rid: pendingInMemory.rid, reused: true };
     }
   }
   const rid = generateRoomId();
-  const pending = { uid, signature, rid };
+  const pending = { uid, signature, rid, sheet };
   pendingInMemory = pending;
   try {
-    window.localStorage.setItem(PENDING_ROOM_KEY, JSON.stringify(pending));
+    window.localStorage.setItem(sheetLocalKey(PENDING_ROOM_KEY, sheet), JSON.stringify(pending));
   } catch {
     // 로컬 저장소를 사용할 수 없으면 같은 탭에서만 ID를 재사용
   }
   return { rid, reused: false };
 }
 
-export function clearPendingCreateRoom(rid: string): void {
-  if (pendingInMemory?.rid === rid) pendingInMemory = null;
+export function clearPendingCreateRoom(rid: string, sheet: PickSheetId = "current"): void {
+  if (pendingInMemory?.rid === rid && pendingInMemory.sheet === sheet) pendingInMemory = null;
   try {
-    const raw = window.localStorage.getItem(PENDING_ROOM_KEY);
-    if (raw && JSON.parse(raw)?.rid === rid) window.localStorage.removeItem(PENDING_ROOM_KEY);
+    const raw = window.localStorage.getItem(sheetLocalKey(PENDING_ROOM_KEY, sheet));
+    if (raw && JSON.parse(raw)?.rid === rid) window.localStorage.removeItem(sheetLocalKey(PENDING_ROOM_KEY, sheet));
   } catch {
     // localStorage 사용 불가
   }

@@ -3,6 +3,7 @@ import {
   MAX_NICKNAME_LENGTH, MY_ROOMS_KEY, MY_ROOMS_MAX, NICK_KEY, PICKS_KEY, ROOM_ID_PATTERN
 } from "./config";
 import type { MyRoom, Picks } from "./types";
+import { sheetLocalKey, type PickSheetId } from "./pickSheets";
 
 export function saveLocal(key: string, value: string) {
   try {
@@ -12,9 +13,9 @@ export function saveLocal(key: string, value: string) {
   }
 }
 
-export function loadMyRooms(): MyRoom[] {
+export function loadMyRooms(sheet: PickSheetId = "current"): MyRoom[] {
   try {
-    const raw = window.localStorage.getItem(MY_ROOMS_KEY);
+    const raw = window.localStorage.getItem(sheetLocalKey(MY_ROOMS_KEY, sheet));
     if (!raw) return [];
     const arr = JSON.parse(raw);
     if (!Array.isArray(arr)) return [];
@@ -39,17 +40,17 @@ export function loadMyRooms(): MyRoom[] {
   }
 }
 
-export function saveMyRooms(list: MyRoom[]) {
+export function saveMyRooms(list: MyRoom[], sheet: PickSheetId = "current") {
   try {
-    window.localStorage.setItem(MY_ROOMS_KEY, JSON.stringify(list));
+    window.localStorage.setItem(sheetLocalKey(MY_ROOMS_KEY, sheet), JSON.stringify(list));
   } catch {
     /* 저장소를 못 쓰는 환경이면 이번 접속에서만 유지 */
   }
 }
 
-export function loadLocalPicks(): Picks {
+export function loadLocalPicks(sheet: PickSheetId = "current"): Picks {
   try {
-    const raw = window.localStorage.getItem(PICKS_KEY);
+    const raw = window.localStorage.getItem(sheetLocalKey(PICKS_KEY, sheet));
     if (!raw) return {};
     const obj = JSON.parse(raw);
     const out: Picks = {};
@@ -64,9 +65,9 @@ export function loadLocalPicks(): Picks {
   }
 }
 
-export function loadLocalNickname(): string {
+export function loadLocalNickname(sheet: PickSheetId = "current"): string {
   try {
-    return (window.localStorage.getItem(NICK_KEY) || "").slice(0, MAX_NICKNAME_LENGTH);
+    return (window.localStorage.getItem(sheetLocalKey(NICK_KEY, sheet)) || "").slice(0, MAX_NICKNAME_LENGTH);
   } catch {
     return "";
   }
