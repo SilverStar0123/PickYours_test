@@ -30,7 +30,6 @@ export interface SongItem {
   videoId: string;
   startMin: number;
   endMax: number;
-  autoTitle?: boolean; // 직접 입력 테스트에서 제목을 비웠을 때 유튜브 영상 제목으로 채움
 }
 
 interface HistoryItem {
@@ -326,10 +325,6 @@ export default function SongQuiz({ agencies, lang, t }: SongQuizProps) {
   const [loadingAudio, setLoadingAudio] = useState(false);
   const [playerError, setPlayerError] = useState(false);
 
-  // 직접 링크 입력 테스트용
-  const [customUrl, setCustomUrl] = useState("");
-  const [customTitle, setCustomTitle] = useState("");
-
   // ES_list.csv (shuffle1, shuffle2, best_shuffle 추출용) + songs.csv 함께 불러오기
   useEffect(() => {
     let cancelled = false;
@@ -599,19 +594,6 @@ export default function SongQuiz({ agencies, lang, t }: SongQuizProps) {
             setLoadingAudio(false);
             setIsPlayingAudio(true);
             setPlayerError(false);
-
-            try {
-              const fetchedTitle = event.target?.getVideoData?.()?.title;
-              if (fetchedTitle && currentSongRef.current?.autoTitle) {
-                setCurrentSong((prev) =>
-                  prev && prev.autoTitle
-                    ? { ...prev, titleKo: fetchedTitle, titleEn: fetchedTitle, titleJa: fetchedTitle, autoTitle: false }
-                    : prev
-                );
-              }
-            } catch {
-              /* ignore */
-            }
 
             if (pendingPlayRef.current) {
               if (stopTimerRef.current !== null) {
@@ -901,50 +883,6 @@ export default function SongQuiz({ agencies, lang, t }: SongQuizProps) {
     });
   };
 
-  // 커스텀 유튜브 링크로 1문제 즉시 테스트
-  const handleCustomUrlStart = () => {
-    const vid = extractYouTubeId(customUrl);
-    if (!vid) {
-      alert(t("quizInvalidUrl"));
-      return;
-    }
-    const typedTitle = customTitle.trim();
-    const title = typedTitle || t("quizCustomDefaultTitle");
-    const customSong: SongItem = {
-      id: `custom-${Date.now()}`,
-      unit: t("quizCustomUnit"),
-      rawUnit: t("quizCustomUnit"),
-      titleKo: title,
-      titleEn: title,
-      titleJa: title,
-      aliases: [],
-      videoId: vid,
-      startMin: 15,
-      endMax: 90,
-      autoTitle: !typedTitle
-    };
-    const start = pickRandomStart(customSong);
-    setQuestionQueue([customSong]);
-    setQuestionIdx(0);
-    setHistory([]);
-    setPhase("playing");
-    currentSongRef.current = customSong;
-    setCurrentSong(customSong);
-    setClipDuration(1);
-    setStartSec(start);
-    setTries(0);
-    setListenCount(0);
-    setStatus("playing");
-    setShowUnitHint(false);
-    setGuess("");
-    setPlayerError(false);
-
-    window.setTimeout(() => {
-      quizCardRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
-      ensurePlayerAndPlay(vid, start, 1);
-    }, 50);
-  };
-
   const revealed = phase === "playing" && (status === "correct" || status === "giveup");
   const correctTotal = useMemo(() => history.filter((h) => h.correct).length, [history]);
   const accuracyPercent =
@@ -1127,9 +1065,6 @@ export default function SongQuiz({ agencies, lang, t }: SongQuizProps) {
     return <div className="sq-root sq-loading">{t("loadingData")}</div>;
   }
 
-  // 직접 입력 테스트 패널은 개발 중이거나 주소에 ?dev 가 있을 때만 표시
-  const showDevTools =
-    process.env.NODE_ENV !== "production" || new URLSearchParams(window.location.search).has("dev");
   const playing = phase === "playing" && !!currentSong;
   const progressPct =
     questionQueue.length > 0
@@ -1596,40 +1531,6 @@ export default function SongQuiz({ agencies, lang, t }: SongQuizProps) {
         />
       )}
 
-      {showDevTools && (
-        <details className="sq-dev">
-          <summary>{t("quizCustomUrlToggle")}</summary>
-          <div className="sq-dev-form">
-            <input
-              type="text"
-              value={customUrl}
-              onChange={(e) => setCustomUrl(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === "Enter" && !e.nativeEvent.isComposing) {
-                  e.preventDefault();
-                  handleCustomUrlStart();
-                }
-              }}
-              placeholder={t("quizCustomUrlPlaceholder")}
-            />
-            <input
-              type="text"
-              value={customTitle}
-              onChange={(e) => setCustomTitle(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === "Enter" && !e.nativeEvent.isComposing) {
-                  e.preventDefault();
-                  handleCustomUrlStart();
-                }
-              }}
-              placeholder={t("quizCustomTitlePlaceholder")}
-            />
-            <button type="button" className="sq-secondary" onClick={handleCustomUrlStart}>
-              {t("quizCustomStartBtn")}
-            </button>
-          </div>
-        </details>
-      )}
     </div>
   );
 }

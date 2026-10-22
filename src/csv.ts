@@ -18,7 +18,11 @@ export const stripQuotes = (v: unknown) => String(v ?? "").replace(/['"]/g, "").
 // public 폴더의 CSV 파일을 읽어 (키가 정리된) 행 배열로 반환
 export function loadCsv(file: string): Promise<Record<string, string>[]> {
   return new Promise((resolve, reject) => {
-    Papa.parse<Record<string, string>>(`${process.env.PUBLIC_URL || "."}/${file}?${Date.now()}`, {
+    // 동일 배포에서는 같은 URL을 사용해 브라우저 캐시를 활용하고,
+    // 새 GitHub 배포에서만 커밋 해시가 달라져 CSV를 새로 내려받음.
+    const version = process.env.REACT_APP_CSV_VERSION || "local";
+    const baseUrl = (process.env.PUBLIC_URL || ".").replace(/\/$/, "");
+    Papa.parse<Record<string, string>>(`${baseUrl}/${file}?v=${encodeURIComponent(version)}`, {
       download: true,
       header: true,
       skipEmptyLines: true,

@@ -33,7 +33,13 @@ export default function App() {
   const [uid, setUid] = useState<string | null>(null);
   const [authError, setAuthError] = useState(false);
 
-  const [nickname, setNickname] = useState(() => loadLocalNickname());
+  // 공유방 링크로 시작하면 이전 방의 전역 닉네임 대신 해당 방에 저장한 닉네임을 사용
+  const [nickname, setNickname] = useState(() => {
+    const initialRoomId = parseRoomId();
+    return initialRoomId
+      ? loadMyRooms().find((r) => r.id === initialRoomId)?.nickname ?? ""
+      : loadLocalNickname();
+  });
   const [picks, setPicks] = useState<Picks>(() => loadLocalPicks());
 
   const [roomId, setRoomId] = useState<string | null>(() => parseRoomId());
@@ -132,6 +138,8 @@ export default function App() {
   const personalRef = useRef<HTMLDivElement>(null);
   const nicknameRef = useRef<HTMLInputElement>(null);
   const restored = useRef(false);
+  // 방 정보를 읽는 동안 사용자가 직접 닉네임을 고쳤다면 서버 값으로 덮어쓰지 않음
+  const nicknameEditedInRoom = useRef(false);
   const listRef = useRef<HTMLDivElement>(null);
   const [listWidth, setListWidth] = useState(0);
   const [logoRatios, setLogoRatios] = useState<Record<string, number>>({});
@@ -201,7 +209,11 @@ export default function App() {
     );
     if (Object.keys(next).length > 0) setPicks(next);
     const nk = sp.get("nk");
-    if (nk) setNickname(nk.slice(0, MAX_NICKNAME_LENGTH));
+    if (nk) {
+      // 다른 브라우저에서 현재 입력한 닉네임을 넘겼다면, 늦게 도착한 방 데이터로 덮어쓰지 않음
+      nicknameEditedInRoom.current = true;
+      setNickname(nk.slice(0, MAX_NICKNAME_LENGTH));
+    }
     sp.delete("pk");
     sp.delete("nk");
     const qs = sp.toString();
@@ -425,7 +437,7 @@ export default function App() {
     const mine = roomUsers[uid];
     if (!mine) return;
     restored.current = true;
-    setNickname((cur) => cur || mine.nickname);
+    if (!nicknameEditedInRoom.current) setNickname(mine.nickname);
     setPicks((cur) => {
       if (Object.keys(cur).length > 0) return cur; // 이미 고르기 시작했다면 덮어쓰지 않음
       const r: Picks = {};
@@ -727,6 +739,9 @@ export default function App() {
     }
     window.history.replaceState({}, "", `${window.location.pathname}?room=${id}`);
     restored.current = false;
+    nicknameEditedInRoom.current = false;
+    // 방마다 저장한 닉네임이 있으면 즉시 복원, 처음 들어간 방이면 빈칸으로 시작
+    setNickname(myRooms.find((r) => r.id === id)?.nickname ?? "");
     setPicks({});
     setRoomUsers({});
     setRoomName("");
@@ -1062,7 +1077,10 @@ export default function App() {
                 type="text"
                 value={nickname}
                 maxLength={MAX_NICKNAME_LENGTH}
-                onChange={(e) => setNickname(e.target.value)}
+                onChange={(e) => {
+                  nicknameEditedInRoom.current = true;
+                  setNickname(e.target.value);
+                }}
                 onKeyDown={(e) => {
                   if (e.key === "Enter" && !e.nativeEvent.isComposing) e.currentTarget.blur();
                 }}

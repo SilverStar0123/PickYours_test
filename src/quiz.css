@@ -970,38 +970,6 @@
   }
 }
 
-/* 개발용 테스트 패널 */
-.sq-dev {
-  margin-top: 8px;
-  padding: 10px 14px;
-  background: #fff;
-  border: 1px dashed #ced4da;
-  border-radius: 12px;
-  color: var(--sq-muted);
-  font-size: 0.85rem;
-}
-.sq-dev summary {
-  cursor: pointer;
-}
-.sq-dev-form {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  margin-top: 10px;
-}
-.sq-dev-form input {
-  box-sizing: border-box;
-  height: 42px;
-  padding: 0 12px;
-  border: 1px solid var(--sq-line);
-  border-radius: 10px;
-  font-size: 1rem;
-}
-.sq-dev-form .sq-secondary {
-  margin-top: 0;
-  min-height: 42px;
-}
-
 /* 애니메이션 */
 @keyframes sqPulse {
   0%, 100% { transform: scale(1); }
