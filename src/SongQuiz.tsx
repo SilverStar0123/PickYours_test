@@ -2,6 +2,8 @@ import React, { useState, useEffect, useRef, useMemo } from "react";
 import type { Lang, MsgKey } from "./i18n";
 import type { Agency } from "./types";
 import { loadCsv, stripQuotes } from "./csv";
+import { SHUFFLE_UNIT_ID, FUSION_UNIT_ID, classifyQuizUnit, makeOfficialUnitAliases } from "./quizUnits";
+export { SHUFFLE_UNIT_ID, FUSION_UNIT_ID } from "./quizUnits";
 import "./quiz.css";
 import ImagePreviewModal from "./components/ImagePreviewModal";
 import { withTimeout, copyText } from "./utils";
@@ -13,6 +15,8 @@ import { generateRoomId } from "./rooms";
 import { saveQuizCompletion } from "./quizResults";
 import type { QuizPool } from "./quizResults";
 import { loadQuizPercentileData, calculateQuizPercentile } from "./quizPercentiles";
+import { getAcceptedAnswers, normalizeAnswer, isCorrectGuess } from "./quizAnswer";
+export { normalizeAnswer, isCorrectGuess } from "./quizAnswer";
 import type { QuizPercentile } from "./quizPercentiles";
 import {
   QUIZ_SHARE_HASHTAGS,
@@ -22,9 +26,6 @@ import {
   renderQuizResultBlob
 } from "./quizShare";
 import type { QuizResultInfo, ResultCardText, TopSongLine } from "./quizShare";
-
-export const SHUFFLE_UNIT_ID = "__shuffle__";
-export const FUSION_UNIT_ID = "__fusion__";
 
 export interface SongItem {
   id: string;
@@ -72,37 +73,6 @@ export function extractYouTubeId(input: string): string | null {
   }
   const m = s.match(/(?:v=|youtu\.be\/|embed\/|shorts\/|watch\?v=)([a-zA-Z0-9_-]{11})/);
   return m ? m[1] : null;
-}
-
-// 대소문자·띄어쓰기·특수기호(', !, ☆, *, →, :, - 등) 보정 정규화 (초보자 모드 및 하드 모드 공통 사용)
-export function normalizeAnswer(str: string): string {
-  return str
-    .normalize("NFKC")
-    .toLowerCase()
-    // 한글, 영문, 숫자, 일본어(히라가나·카타카나·한자)만 남기고 모든 공백/특수부호 제거
-    .replace(/[^a-z0-9가-힣ㄱ-ㅎㅏ-ㅣ\u3040-\u30ff\u3400-\u4dbf\u4e00-\u9fff]/g, "");
-}
-
-// 한 곡에서 인정되는 모든 정답 문자열 목록 (비어있는 언어 칸은 자동 제외 + 괄호 부제 제거본 포함)
-function getAcceptedAnswers(song: SongItem): string[] {
-  const base = [song.titleKo, song.titleEn, song.titleJa, ...song.aliases]
-    .map((x) => x.trim())
-    .filter(Boolean);
-  const extra: string[] = [];
-  base.forEach((title) => {
-    const stripped = title.replace(/\s*[\(（\[【].*?[\)）\]】]\s*/g, "").trim();
-    if (stripped && stripped.length >= 2 && stripped !== title) {
-      extra.push(stripped);
-    }
-  });
-  return Array.from(new Set([...base, ...extra]));
-}
-
-export function isCorrectGuess(guess: string, song: SongItem): boolean {
-  const g = normalizeAnswer(guess);
-  if (!g) return false;
-  const candidates = getAcceptedAnswers(song);
-  return candidates.some((c) => normalizeAnswer(c) === g);
 }
 
 // 배열 무작위 섞기 (Fisher-Yates)
@@ -239,26 +209,17 @@ export default function SongQuiz({ agencies, lang, t }: SongQuizProps) {
   const [countPreset, setCountPreset] = useState<5 | 10 | 30 | "custom">(10);
   const [customCountInput, setCustomCountInput] = useState<string>("15");
 
-  // 선택된 유닛 필터 (16개 정규 유닛 + 셔플곡 + 퓨전곡 + songs.csv 내 추가 카테고리)
+  // 선택된 유닛 필터 (16개 정규 유닛 + 셔플곡 + 퓨전곡)
   const allUnits = useMemo(() => {
     const base = agencies.flatMap((a) => a.groups.map((g) => ({ id: g.id, name: g.name })));
-    const seen = new Set(base.map((u) => u.id));
     // 셔플곡이 1곡이라도 있으면 '셔플곡' 필터 버튼 추가
     if (songs.some((s) => s.unit === SHUFFLE_UNIT_ID)) {
-      seen.add(SHUFFLE_UNIT_ID);
       base.push({ id: SHUFFLE_UNIT_ID, name: tRef.current("quizShuffleUnit") });
     }
     // 서로 다른 유닛이 함께 부른 퓨전곡을 하나의 버튼으로 묶음
     if (songs.some((s) => s.unit === FUSION_UNIT_ID)) {
-      seen.add(FUSION_UNIT_ID);
       base.push({ id: FUSION_UNIT_ID, name: tRef.current("quizFusionUnit") });
     }
-    songs.forEach((s) => {
-      if (s.unit && !seen.has(s.unit)) {
-        seen.add(s.unit);
-        base.push({ id: s.unit, name: s.unit });
-      }
-    });
     return base;
   }, [agencies, songs, lang]);
 
@@ -343,31 +304,16 @@ export default function SongQuiz({ agencies, lang, t }: SongQuizProps) {
   const [loadingAudio, setLoadingAudio] = useState(false);
   const [playerError, setPlayerError] = useState(false);
 
-  // ES_list.csv (shuffle1, shuffle2, best_shuffle 추출용) + songs.csv 함께 불러오기
+  // songs.csv의 unit이 정규 16개 유닛 중 하나가 아니라면 셔플곡으로 자동 분류.
+  // 서로 다른 정규 유닛이 합쳐진 이름(&, ×, VS 등)은 퓨전곡으로 분류한다.
+  // 정규 유닛명은 App에서 먼저 불러온 agencies의 그룹 목록을 사용하므로 별도 CSV 요청이 필요 없다.
   useEffect(() => {
     let cancelled = false;
     (async () => {
       try {
-        const [esRows, songRows] = await Promise.all([
-          loadCsv("ES_list.csv").catch(() => [] as Record<string, string>[]),
-          loadCsv("songs.csv")
-        ]);
+        const songRows = await loadCsv("songs.csv");
         if (cancelled) return;
-
-        // 1) ES_list.csv의 shuffle1, shuffle2, best_shuffle 열에 적힌 모든 셔플 유닛명 수집
-        const shuffleNames = new Set<string>();
-        esRows.forEach((r) => {
-          ["shuffle1", "shuffle2", "best_shuffle", "shffle"].forEach((col) => {
-            const val = stripQuotes(r[col] || "");
-            if (val) {
-              val
-                .split(/[|,]/)
-                .map((s) => s.trim().toLowerCase())
-                .filter(Boolean)
-                .forEach((name) => shuffleNames.add(name));
-            }
-          });
-        });
+        const officialAliases = makeOfficialUnitAliases(agencies.flatMap((a) => a.groups));
 
         // 2) songs.csv 파싱 (영어명 등 일부 언어 제목이 비어 있어도 있는 제목으로 자동 보완)
         const parsed: SongItem[] = [];
@@ -377,16 +323,8 @@ export default function SongQuiz({ agencies, lang, t }: SongQuizProps) {
           if (!videoId) return;
 
           const rawUnit = stripQuotes(r.unit || "") || "기타";
-          const isShuffle =
-            shuffleNames.has(rawUnit.toLowerCase()) ||
-            rawUnit === "셔플곡" ||
-            rawUnit === "셔플 유닛" ||
-            rawUnit.toLowerCase() === "shuffle";
-          // CSV에 'Crazy:B & UNDEAD' 또는 'UNDEAD × 紅月'처럼 적히면 퓨전곡으로 처리.
-          // 원래 이름(rawUnit)은 결과 화면에 그대로 표시함.
-          const isFusion = /[&＆×]/.test(rawUnit) ||
-            ["퓨전곡", "fusion", "fusion unit"].includes(rawUnit.toLowerCase());
-          const unit = isShuffle ? SHUFFLE_UNIT_ID : isFusion ? FUSION_UNIT_ID : rawUnit;
+          // 원래 이름은 결과 화면에 남기고, 출제 필터에 사용하는 카테고리만 분류한다.
+          const unit = classifyQuizUnit(rawUnit, officialAliases);
 
           const tKo = stripQuotes(r.title_ko || r.title || "");
           const tEn = stripQuotes(r.title_en || "");
