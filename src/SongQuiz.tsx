@@ -24,10 +24,11 @@ import {
 import type { QuizResultInfo, ResultCardText, TopSongLine } from "./quizShare";
 
 export const SHUFFLE_UNIT_ID = "__shuffle__";
+export const FUSION_UNIT_ID = "__fusion__";
 
 export interface SongItem {
   id: string;
-  unit: string; // 필터 기준 유닛 id (셔플 유닛 곡들은 모두 '__shuffle__'로 통합)
+  unit: string; // 셔플곡과 퓨전곡은 필터용 카테고리 ID로 묶음
   rawUnit: string; // songs.csv에 적힌 원래 유닛명 (예: 'Ring.A.Bell', 'MODE/D')
   titleKo: string;
   titleEn: string;
@@ -238,7 +239,7 @@ export default function SongQuiz({ agencies, lang, t }: SongQuizProps) {
   const [countPreset, setCountPreset] = useState<5 | 10 | 30 | "custom">(10);
   const [customCountInput, setCustomCountInput] = useState<string>("15");
 
-  // 선택된 유닛 필터 (16개 정규 유닛 + '셔플곡' + songs.csv 내 추가 카테고리)
+  // 선택된 유닛 필터 (16개 정규 유닛 + 셔플곡 + 퓨전곡 + songs.csv 내 추가 카테고리)
   const allUnits = useMemo(() => {
     const base = agencies.flatMap((a) => a.groups.map((g) => ({ id: g.id, name: g.name })));
     const seen = new Set(base.map((u) => u.id));
@@ -246,6 +247,11 @@ export default function SongQuiz({ agencies, lang, t }: SongQuizProps) {
     if (songs.some((s) => s.unit === SHUFFLE_UNIT_ID)) {
       seen.add(SHUFFLE_UNIT_ID);
       base.push({ id: SHUFFLE_UNIT_ID, name: tRef.current("quizShuffleUnit") });
+    }
+    // 서로 다른 유닛이 함께 부른 퓨전곡을 하나의 버튼으로 묶음
+    if (songs.some((s) => s.unit === FUSION_UNIT_ID)) {
+      seen.add(FUSION_UNIT_ID);
+      base.push({ id: FUSION_UNIT_ID, name: tRef.current("quizFusionUnit") });
     }
     songs.forEach((s) => {
       if (s.unit && !seen.has(s.unit)) {
@@ -262,6 +268,7 @@ export default function SongQuiz({ agencies, lang, t }: SongQuizProps) {
       m[g.id] = g.name;
     });
     m[SHUFFLE_UNIT_ID] = tRef.current("quizShuffleUnit");
+    m[FUSION_UNIT_ID] = tRef.current("quizFusionUnit");
     return m;
   }, [allUnits, lang]);
 
@@ -375,7 +382,11 @@ export default function SongQuiz({ agencies, lang, t }: SongQuizProps) {
             rawUnit === "셔플곡" ||
             rawUnit === "셔플 유닛" ||
             rawUnit.toLowerCase() === "shuffle";
-          const unit = isShuffle ? SHUFFLE_UNIT_ID : rawUnit;
+          // CSV에 'Crazy:B & UNDEAD' 또는 'UNDEAD × 紅月'처럼 적히면 퓨전곡으로 처리.
+          // 원래 이름(rawUnit)은 결과 화면에 그대로 표시함.
+          const isFusion = /[&＆×]/.test(rawUnit) ||
+            ["퓨전곡", "fusion", "fusion unit"].includes(rawUnit.toLowerCase());
+          const unit = isShuffle ? SHUFFLE_UNIT_ID : isFusion ? FUSION_UNIT_ID : rawUnit;
 
           const tKo = stripQuotes(r.title_ko || r.title || "");
           const tEn = stripQuotes(r.title_en || "");
@@ -872,10 +883,11 @@ export default function SongQuiz({ agencies, lang, t }: SongQuizProps) {
     return others.length > 0 ? `${primary} (${others.join(" / ")})` : primary;
   };
 
-  // 정답 공개 및 결과 화면에서 유닛 이름 표시 (셔플곡이면 '셔플곡 (Ring.A.Bell)' 형태로 원래 유닛명 병기)
+  // 셔플곡/퓨전곡의 정답 공개 시 원래 유닛 이름도 표시
   const formatFullUnitLabel = (s: SongItem): string => {
     const baseLabel = unitNameMap[s.unit] || s.unit;
-    if (s.unit === SHUFFLE_UNIT_ID && s.rawUnit && s.rawUnit !== "셔플곡" && s.rawUnit !== "셔플 유닛") {
+    if ((s.unit === SHUFFLE_UNIT_ID || s.unit === FUSION_UNIT_ID) &&
+        s.rawUnit && !["셔플곡", "셔플 유닛", "shuffle", "퓨전곡", "fusion", "fusion unit"].includes(s.rawUnit.toLowerCase())) {
       return `${baseLabel} (${s.rawUnit})`;
     }
     return baseLabel;
