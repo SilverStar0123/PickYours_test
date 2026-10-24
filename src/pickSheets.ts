@@ -84,7 +84,7 @@ export const PICK_SHEETS: Record<PickSheetId, PickSheet> = {
     id: "special",
     source: "ex_unit",
     multiplayer: true,
-    showInIndex: true,
+    showInIndex: false,
     collection: "specialRooms",
     route: "#/picks/special",
     labels: { ko: "스페셜 유닛", en: "Special Units", ja: "スペシャルユニット" }
