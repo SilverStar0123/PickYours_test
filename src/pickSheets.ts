@@ -18,7 +18,7 @@ export const SPECIAL_UNITS = [
 export const SPECIAL_UNIT_SECTIONS = [
   {
     id: "featured",
-    labels: { ko: "최근·주요 팀", en: "Featured Teams", ja: "注目のチーム" },
+    labels: { ko: "활동 유닛", en: "Active Units", ja: "活動ユニット" },
     units: ["Eve", "Adam", "Double Face", "프로듀서", "J&A"]
   },
   {
@@ -28,7 +28,7 @@ export const SPECIAL_UNIT_SECTIONS = [
   },
   {
     id: "stories",
-    labels: { ko: "스토리·기획 팀", en: "Story & Project Teams", ja: "ストーリー・企画チーム" },
+    labels: { ko: "임시 유닛", en: "Project Teams", ja: "企画チーム" },
     units: ["team 우시와카마루", "트로이메라이", "Lilith", "Rain-bows", "Ba-barrier", "슈퍼 아이돌"]
   }
 ] as const;
