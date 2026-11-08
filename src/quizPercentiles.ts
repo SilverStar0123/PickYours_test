@@ -10,7 +10,7 @@ let cached: Promise<DataFile | null> | null = null;
 
 export function loadQuizPercentileData(): Promise<DataFile | null> {
   if (!cached) {
-    const base = process.env.PUBLIC_URL || "";
+    const base = process.env.PUBLIC_URL || ".";
     const version = process.env.REACT_APP_CSV_VERSION || "local";
     cached = fetch(`${base}/quiz-percentiles.json?v=${encodeURIComponent(version)}`)
       .then((r) => {
@@ -29,12 +29,14 @@ export function loadQuizPercentileData(): Promise<DataFile | null> {
 
 export function calculateQuizPercentile(
   data: DataFile | null, mode: "easy" | "hard", questionCount: number,
-  pool: "all" | "filtered", score: number
+  pool: "all" | "filtered", score: number, clipMode: "random" | "start" = "random"
 ): QuizPercentile | null {
   // 필터별 곡 구성이 서로 다르므로 filtered 결과의 백분위는 표시하지 않음.
   // 점수 원본은 저장되어 이후 분석에 사용할 수 있음.
-  if (pool !== "all") return null;
-  const bucket = data?.groups?.[`${mode}:${questionCount}:${pool}`];
+  if (!data?.enabled || pool !== "all") return null;
+  // Legacy distribution files contain only random-mode scores.
+  const bucket = data?.groups?.[`${clipMode}:${mode}:${questionCount}:${pool}`]
+    ?? (clipMode === "random" ? data?.groups?.[`${mode}:${questionCount}:${pool}`] : undefined);
   if (!bucket || !Number.isInteger(bucket.total) || bucket.total < 30 ||
       !Array.isArray(bucket.counts) || bucket.counts.length !== 101 ||
       !bucket.counts.every((v) => Number.isInteger(v) && v >= 0) ||

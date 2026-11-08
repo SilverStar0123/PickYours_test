@@ -330,9 +330,8 @@ export default function SongQuiz({ lang, t }: SongQuizProps) {
       pool_type: pool,
       score: summary.score
     });
-    if (clipMode === "start") return;
     void saveQuizCompletion({
-      attemptId: runId, mode, questionCount: questionQueue.length, pool,
+      attemptId: runId, mode, clipMode, questionCount: questionQueue.length, pool,
       score: summary.score, perfect: summary.perfect,
       otherCorrect: summary.otherCorrect, giveup: summary.giveup
     }).catch((err) => console.warn("퀴즈 점수 저장 실패 (게임은 정상 진행):", err));
@@ -1317,12 +1316,13 @@ export default function SongQuiz({ lang, t }: SongQuizProps) {
 
   // 배포된 분포 JSON이 활성화되기 전까지는 아무것도 표시하지 않음.
   useEffect(() => {
-    if (phase !== "summary" || clipMode === "start") return;
+    if (phase !== "summary") return;
+    setPercentile(null);
     let cancelled = false;
     void loadQuizPercentileData().then((data) => {
       if (cancelled) return;
       setPercentile(calculateQuizPercentile(
-        data, easyMode ? "easy" : "hard", questionQueue.length, runPool, totalScore
+        data, easyMode ? "easy" : "hard", questionQueue.length, runPool, totalScore, clipMode
       ));
     });
     return () => { cancelled = true; };

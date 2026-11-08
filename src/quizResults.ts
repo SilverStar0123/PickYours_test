@@ -9,6 +9,7 @@ export type QuizPool = "all" | "filtered";
 export interface QuizCompletion {
   attemptId: string; // 게임 시작 시 생성한 무작위 12자 ID (재시도 시에도 동일)
   mode: QuizMode;
+  clipMode: "random" | "start";
   questionCount: number;
   pool: QuizPool;
   score: number;
@@ -33,6 +34,7 @@ export async function saveQuizCompletion(item: QuizCompletion): Promise<void> {
   await setDoc(doc(db, "quizScores", item.attemptId), {
     uid: user.uid,
     mode: item.mode,
+    clipMode: item.clipMode,
     questionCount: item.questionCount,
     pool: item.pool,
     score: item.score,
@@ -40,6 +42,6 @@ export async function saveQuizCompletion(item: QuizCompletion): Promise<void> {
     otherCorrect: item.otherCorrect,
     giveup: item.giveup,
     completedAt: serverTimestamp(),
-    v: 1
+    v: 2
   });
 }
