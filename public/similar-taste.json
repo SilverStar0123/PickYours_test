@@ -324,90 +324,46 @@
           ]
         },
         {
-          "id": "Crazy:B::오오카와 코하쿠",
-          "unit": "Crazy:B",
-          "name": "오오카와 코하쿠",
-          "selectedCount": 1294,
-          "recommendations": [
-            {
-              "id": "ALKALOID::시라토리 아이라",
-              "unit": "ALKALOID",
-              "name": "시라토리 아이라",
-              "pairCount": 565,
-              "baseCount": 1294,
-              "populationCount": 6058,
-              "overallCount": 1464,
-              "togetherRate": 0.4366306027820711,
-              "overallRate": 0.24166391548365798,
-              "lift": 1.806767890473898
-            },
-            {
-              "id": "fine::히메미야 토리",
-              "unit": "fine",
-              "name": "히메미야 토리",
-              "pairCount": 425,
-              "baseCount": 1294,
-              "populationCount": 6039,
-              "overallCount": 1185,
-              "togetherRate": 0.3284389489953632,
-              "overallRate": 0.19622454048683557,
-              "lift": 1.67379140336118
-            },
-            {
-              "id": "Knights::스오우 츠카사",
-              "unit": "Knights",
-              "name": "스오우 츠카사",
-              "pairCount": 433,
-              "baseCount": 1294,
-              "populationCount": 6053,
-              "overallCount": 1225,
-              "togetherRate": 0.3346213292117465,
-              "overallRate": 0.20237898562696185,
-              "lift": 1.6534391067091443
-            }
-          ]
-        },
-        {
           "id": "Crazy:B::오우카와 코하쿠",
           "unit": "Crazy:B",
           "name": "오우카와 코하쿠",
-          "selectedCount": 364,
+          "selectedCount": 1658,
           "recommendations": [
-            {
-              "id": "fine::히메미야 토리",
-              "unit": "fine",
-              "name": "히메미야 토리",
-              "pairCount": 117,
-              "baseCount": 355,
-              "populationCount": 6039,
-              "overallCount": 1185,
-              "togetherRate": 0.3295774647887324,
-              "overallRate": 0.19622454048683557,
-              "lift": 1.6795935104296666
-            },
             {
               "id": "ALKALOID::시라토리 아이라",
               "unit": "ALKALOID",
               "name": "시라토리 아이라",
-              "pairCount": 146,
-              "baseCount": 360,
+              "pairCount": 711,
+              "baseCount": 1654,
               "populationCount": 6058,
               "overallCount": 1464,
-              "togetherRate": 0.40555555555555556,
+              "togetherRate": 0.42986698911729143,
               "overallRate": 0.24166391548365798,
-              "lift": 1.6781800242865816
+              "lift": 1.7787802049675898
+            },
+            {
+              "id": "fine::히메미야 토리",
+              "unit": "fine",
+              "name": "히메미야 토리",
+              "pairCount": 542,
+              "baseCount": 1649,
+              "populationCount": 6039,
+              "overallCount": 1185,
+              "togetherRate": 0.32868405093996356,
+              "overallRate": 0.19622454048683557,
+              "lift": 1.675040492511764
             },
             {
               "id": "Knights::스오우 츠카사",
               "unit": "Knights",
               "name": "스오우 츠카사",
-              "pairCount": 115,
-              "baseCount": 362,
+              "pairCount": 548,
+              "baseCount": 1656,
               "populationCount": 6053,
               "overallCount": 1225,
-              "togetherRate": 0.31767955801104975,
+              "togetherRate": 0.33091787439613524,
               "overallRate": 0.20237898562696185,
-              "lift": 1.5697260119517422
+              "lift": 1.6351395050773936
             }
           ]
         },
@@ -530,16 +486,16 @@
               "lift": 1.4915929686647014
             },
             {
-              "id": "Crazy:B::오오카와 코하쿠",
+              "id": "Crazy:B::오우카와 코하쿠",
               "unit": "Crazy:B",
-              "name": "오오카와 코하쿠",
-              "pairCount": 329,
+              "name": "오우카와 코하쿠",
+              "pairCount": 405,
               "baseCount": 1031,
               "populationCount": 6043,
-              "overallCount": 1294,
-              "togetherRate": 0.31910766246362754,
-              "overallRate": 0.21413205361575374,
-              "lift": 1.490237715817389
+              "overallCount": 1646,
+              "togetherRate": 0.39282250242483024,
+              "overallRate": 0.27238126758232667,
+              "lift": 1.4421788469946835
             }
           ]
         },
@@ -993,25 +949,13 @@
               "id": "Crazy:B::오우카와 코하쿠",
               "unit": "Crazy:B",
               "name": "오우카와 코하쿠",
-              "pairCount": 175,
+              "pairCount": 738,
               "baseCount": 2170,
               "populationCount": 6046,
-              "overallCount": 358,
-              "togetherRate": 0.08064516129032258,
-              "overallRate": 0.05921270261329805,
-              "lift": 1.361957109389079
-            },
-            {
-              "id": "Crazy:B::오오카와 코하쿠",
-              "unit": "Crazy:B",
-              "name": "오오카와 코하쿠",
-              "pairCount": 563,
-              "baseCount": 2170,
-              "populationCount": 6046,
-              "overallCount": 1294,
-              "togetherRate": 0.25944700460829495,
-              "overallRate": 0.21402580218326167,
-              "lift": 1.2122230215314924
+              "overallCount": 1652,
+              "togetherRate": 0.3400921658986175,
+              "overallRate": 0.2732385047965597,
+              "lift": 1.244671449771817
             },
             {
               "id": "Knights::사쿠마 리츠",
@@ -1024,6 +968,18 @@
               "togetherRate": 0.28367816091954023,
               "overallRate": 0.23667271827034164,
               "lift": 1.1986094679299124
+            },
+            {
+              "id": "ALKALOID::시라토리 아이라",
+              "unit": "ALKALOID",
+              "name": "시라토리 아이라",
+              "pairCount": 625,
+              "baseCount": 2168,
+              "populationCount": 6055,
+              "overallCount": 1465,
+              "togetherRate": 0.2882841328413284,
+              "overallRate": 0.24194880264244426,
+              "lift": 1.191508822084808
             }
           ]
         },
@@ -1310,16 +1266,16 @@
               "lift": 2.023904717088588
             },
             {
-              "id": "Crazy:B::오오카와 코하쿠",
+              "id": "Crazy:B::오우카와 코하쿠",
               "unit": "Crazy:B",
-              "name": "오오카와 코하쿠",
-              "pairCount": 565,
+              "name": "오우카와 코하쿠",
+              "pairCount": 711,
               "baseCount": 1464,
               "populationCount": 6058,
-              "overallCount": 1294,
-              "togetherRate": 0.3859289617486339,
-              "overallRate": 0.21360184879498184,
-              "lift": 1.8067678904738982
+              "overallCount": 1654,
+              "togetherRate": 0.48565573770491804,
+              "overallRate": 0.2730274017827666,
+              "lift": 1.7787802049675898
             },
             {
               "id": "유성대::센고쿠 시노부",
@@ -1718,16 +1674,16 @@
               "lift": 1.2655439941759845
             },
             {
-              "id": "Crazy:B::오우카와 코하쿠",
-              "unit": "Crazy:B",
-              "name": "오우카와 코하쿠",
-              "pairCount": 155,
+              "id": "fine::히메미야 토리",
+              "unit": "fine",
+              "name": "히메미야 토리",
+              "pairCount": 512,
               "baseCount": 2135,
-              "populationCount": 6060,
-              "overallCount": 357,
-              "togetherRate": 0.07259953161592506,
-              "overallRate": 0.05891089108910891,
-              "lift": 1.2323617971778875
+              "populationCount": 6047,
+              "overallCount": 1188,
+              "togetherRate": 0.2398126463700234,
+              "overallRate": 0.19646105506862907,
+              "lift": 1.2206625190231748
             }
           ]
         },
@@ -2310,28 +2266,16 @@
           "selectedCount": 1229,
           "recommendations": [
             {
-              "id": "Crazy:B::오오카와 코하쿠",
-              "unit": "Crazy:B",
-              "name": "오오카와 코하쿠",
-              "pairCount": 433,
-              "baseCount": 1225,
-              "populationCount": 6053,
-              "overallCount": 1294,
-              "togetherRate": 0.35346938775510206,
-              "overallRate": 0.213778291756154,
-              "lift": 1.6534391067091443
-            },
-            {
               "id": "Crazy:B::오우카와 코하쿠",
               "unit": "Crazy:B",
               "name": "오우카와 코하쿠",
-              "pairCount": 115,
+              "pairCount": 548,
               "baseCount": 1225,
               "populationCount": 6053,
-              "overallCount": 362,
-              "togetherRate": 0.09387755102040816,
-              "overallRate": 0.05980505534445729,
-              "lift": 1.569726011951742
+              "overallCount": 1656,
+              "togetherRate": 0.4473469387755102,
+              "overallRate": 0.2735833471006113,
+              "lift": 1.6351395050773931
             },
             {
               "id": "유성대::센고쿠 시노부",
@@ -2344,6 +2288,18 @@
               "togetherRate": 0.27302363488182557,
               "overallRate": 0.19970316622691292,
               "lift": 1.3671472517947072
+            },
+            {
+              "id": "ALKALOID::시라토리 아이라",
+              "unit": "ALKALOID",
+              "name": "시라토리 아이라",
+              "pairCount": 402,
+              "baseCount": 1228,
+              "populationCount": 6060,
+              "overallCount": 1468,
+              "togetherRate": 0.3273615635179153,
+              "overallRate": 0.24224422442244226,
+              "lift": 1.3513699420426202
             }
           ]
         },
@@ -2542,28 +2498,28 @@
               "lift": 1.51821729057432
             },
             {
-              "id": "Crazy:B::오오카와 코하쿠",
-              "unit": "Crazy:B",
-              "name": "오오카와 코하쿠",
-              "pairCount": 588,
-              "baseCount": 1810,
-              "populationCount": 6013,
-              "overallCount": 1294,
-              "togetherRate": 0.32486187845303865,
-              "overallRate": 0.21520039913520705,
-              "lift": 1.509578419735797
-            },
-            {
               "id": "Crazy:B::오우카와 코하쿠",
               "unit": "Crazy:B",
               "name": "오우카와 코하쿠",
-              "pairCount": 153,
+              "pairCount": 741,
               "baseCount": 1810,
               "populationCount": 6013,
-              "overallCount": 347,
-              "togetherRate": 0.08453038674033149,
-              "overallRate": 0.057708298686179944,
-              "lift": 1.4647873644657443
+              "overallCount": 1641,
+              "togetherRate": 0.4093922651933702,
+              "overallRate": 0.272908697821387,
+              "lift": 1.50010706313695
+            },
+            {
+              "id": "ALKALOID::시라토리 아이라",
+              "unit": "ALKALOID",
+              "name": "시라토리 아이라",
+              "pairCount": 612,
+              "baseCount": 1810,
+              "populationCount": 6015,
+              "overallCount": 1450,
+              "togetherRate": 0.33812154696132596,
+              "overallRate": 0.2410640066500416,
+              "lift": 1.4026214517050866
             }
           ]
         }
@@ -2881,53 +2837,46 @@
           ]
         },
         {
-          "id": "Crazy:B::오오카와 코하쿠",
-          "unit": "Crazy:B",
-          "name": "오오카와 코하쿠",
-          "selectedCount": 26,
-          "recommendations": []
-        },
-        {
           "id": "Crazy:B::오우카와 코하쿠",
           "unit": "Crazy:B",
           "name": "오우카와 코하쿠",
-          "selectedCount": 328,
+          "selectedCount": 354,
           "recommendations": [
             {
               "id": "Knights::스오우 츠카사",
               "unit": "Knights",
               "name": "스오우 츠카사",
-              "pairCount": 101,
-              "baseCount": 326,
+              "pairCount": 111,
+              "baseCount": 352,
               "populationCount": 1379,
               "overallCount": 237,
-              "togetherRate": 0.3098159509202454,
+              "togetherRate": 0.3153409090909091,
               "overallRate": 0.17186366932559827,
-              "lift": 1.802684372654086
+              "lift": 1.8348317031070196
             },
             {
               "id": "ALKALOID::시라토리 아이라",
               "unit": "ALKALOID",
               "name": "시라토리 아이라",
-              "pairCount": 134,
-              "baseCount": 324,
+              "pairCount": 145,
+              "baseCount": 350,
               "populationCount": 1384,
               "overallCount": 320,
-              "togetherRate": 0.41358024691358025,
+              "togetherRate": 0.4142857142857143,
               "overallRate": 0.23121387283236994,
-              "lift": 1.7887345679012345
+              "lift": 1.7917857142857145
             },
             {
               "id": "fine::히메미야 토리",
               "unit": "fine",
               "name": "히메미야 토리",
-              "pairCount": 103,
-              "baseCount": 319,
+              "pairCount": 114,
+              "baseCount": 345,
               "populationCount": 1366,
               "overallCount": 271,
-              "togetherRate": 0.3228840125391849,
+              "togetherRate": 0.33043478260869563,
               "overallRate": 0.19838945827232796,
-              "lift": 1.6275260558248217
+              "lift": 1.6655863949943848
             }
           ]
         },
@@ -3390,18 +3339,6 @@
               "lift": 1.8221663682688332
             },
             {
-              "id": "Crazy:B::오오카와 코하쿠",
-              "unit": "Crazy:B",
-              "name": "오오카와 코하쿠",
-              "pairCount": 10,
-              "baseCount": 316,
-              "populationCount": 1369,
-              "overallCount": 26,
-              "togetherRate": 0.03164556962025317,
-              "overallRate": 0.018991964937910884,
-              "lift": 1.666260954235638
-            },
-            {
               "id": "유성대::센고쿠 시노부",
               "unit": "유성대",
               "name": "센고쿠 시노부",
@@ -3412,6 +3349,18 @@
               "togetherRate": 0.2953846153846154,
               "overallRate": 0.1826783114992722,
               "lift": 1.6169659822249467
+            },
+            {
+              "id": "Ra*bits::텐마 미츠루",
+              "unit": "Ra*bits",
+              "name": "텐마 미츠루",
+              "pairCount": 43,
+              "baseCount": 324,
+              "populationCount": 1371,
+              "overallCount": 117,
+              "togetherRate": 0.13271604938271606,
+              "overallRate": 0.08533916849015317,
+              "lift": 1.5551598607154162
             }
           ]
         },
@@ -3513,25 +3462,13 @@
               "id": "Crazy:B::오우카와 코하쿠",
               "unit": "Crazy:B",
               "name": "오우카와 코하쿠",
-              "pairCount": 162,
+              "pairCount": 174,
               "baseCount": 515,
               "populationCount": 1373,
-              "overallCount": 323,
-              "togetherRate": 0.3145631067961165,
-              "overallRate": 0.23525127458120904,
-              "lift": 1.337136673780396
-            },
-            {
-              "id": "Crazy:B::오오카와 코하쿠",
-              "unit": "Crazy:B",
-              "name": "오오카와 코하쿠",
-              "pairCount": 12,
-              "baseCount": 515,
-              "populationCount": 1373,
-              "overallCount": 26,
-              "togetherRate": 0.023300970873786405,
-              "overallRate": 0.018936635105608158,
-              "lift": 1.230470500373413
+              "overallCount": 349,
+              "togetherRate": 0.3378640776699029,
+              "overallRate": 0.2541879096868172,
+              "lift": 1.3291901966784432
             },
             {
               "id": "Knights::사쿠마 리츠",
@@ -3544,6 +3481,18 @@
               "togetherRate": 0.2692307692307692,
               "overallRate": 0.2194945848375451,
               "lift": 1.2265941295546559
+            },
+            {
+              "id": "MELLOW DEAR US::쿠온 마슈",
+              "unit": "MELLOW DEAR US",
+              "name": "쿠온 마슈",
+              "pairCount": 171,
+              "baseCount": 500,
+              "populationCount": 1341,
+              "overallCount": 377,
+              "togetherRate": 0.342,
+              "overallRate": 0.28113348247576436,
+              "lift": 1.2165039787798408
             }
           ]
         },
@@ -3830,28 +3779,28 @@
               "lift": 2.0709433962264154
             },
             {
-              "id": "Crazy:B::오오카와 코하쿠",
-              "unit": "Crazy:B",
-              "name": "오오카와 코하쿠",
-              "pairCount": 11,
-              "baseCount": 320,
-              "populationCount": 1384,
-              "overallCount": 26,
-              "togetherRate": 0.034375,
-              "overallRate": 0.01878612716763006,
-              "lift": 1.8298076923076922
-            },
-            {
               "id": "Crazy:B::오우카와 코하쿠",
               "unit": "Crazy:B",
               "name": "오우카와 코하쿠",
-              "pairCount": 134,
+              "pairCount": 145,
               "baseCount": 320,
               "populationCount": 1384,
-              "overallCount": 324,
-              "togetherRate": 0.41875,
-              "overallRate": 0.23410404624277453,
-              "lift": 1.7887345679012348
+              "overallCount": 350,
+              "togetherRate": 0.453125,
+              "overallRate": 0.25289017341040465,
+              "lift": 1.791785714285714
+            },
+            {
+              "id": "홍월::타키 이부키",
+              "unit": "홍월",
+              "name": "타키 이부키",
+              "pairCount": 77,
+              "baseCount": 316,
+              "populationCount": 1374,
+              "overallCount": 196,
+              "togetherRate": 0.24367088607594936,
+              "overallRate": 0.14264919941775836,
+              "lift": 1.7081826401446656
             }
           ]
         },
@@ -4214,18 +4163,6 @@
           "selectedCount": 493,
           "recommendations": [
             {
-              "id": "Crazy:B::오오카와 코하쿠",
-              "unit": "Crazy:B",
-              "name": "오오카와 코하쿠",
-              "pairCount": 15,
-              "baseCount": 484,
-              "populationCount": 1386,
-              "overallCount": 26,
-              "togetherRate": 0.030991735537190084,
-              "overallRate": 0.01875901875901876,
-              "lift": 1.652097902097902
-            },
-            {
               "id": "ALKALOID::시라토리 아이라",
               "unit": "ALKALOID",
               "name": "시라토리 아이라",
@@ -4248,6 +4185,18 @@
               "togetherRate": 0.31020408163265306,
               "overallRate": 0.2340272792534099,
               "lift": 1.3255039439088518
+            },
+            {
+              "id": "Special for Princess!::유메",
+              "unit": "Special for Princess!",
+              "name": "유메",
+              "pairCount": 95,
+              "baseCount": 481,
+              "populationCount": 1352,
+              "overallCount": 208,
+              "togetherRate": 0.1975051975051975,
+              "overallRate": 0.15384615384615385,
+              "lift": 1.2837837837837838
             }
           ]
         },
@@ -4326,16 +4275,16 @@
               "lift": 1.1482073563972235
             },
             {
-              "id": "Crazy:B::오오카와 코하쿠",
-              "unit": "Crazy:B",
-              "name": "오오카와 코하쿠",
-              "pairCount": 21,
-              "baseCount": 966,
-              "populationCount": 1372,
-              "overallCount": 26,
-              "togetherRate": 0.021739130434782608,
-              "overallRate": 0.018950437317784258,
-              "lift": 1.1471571906354514
+              "id": "Eden::사자나미 쥰",
+              "unit": "Eden",
+              "name": "사자나미 쥰",
+              "pairCount": 369,
+              "baseCount": 967,
+              "populationCount": 1376,
+              "overallCount": 461,
+              "togetherRate": 0.3815925542916236,
+              "overallRate": 0.33502906976744184,
+              "lift": 1.1389834158465815
             }
           ]
         },
@@ -4361,13 +4310,13 @@
               "id": "Crazy:B::오우카와 코하쿠",
               "unit": "Crazy:B",
               "name": "오우카와 코하쿠",
-              "pairCount": 174,
+              "pairCount": 185,
               "baseCount": 611,
               "populationCount": 1376,
-              "overallCount": 327,
-              "togetherRate": 0.28477905073649756,
-              "overallRate": 0.2376453488372093,
-              "lift": 1.1983363113560264
+              "overallCount": 353,
+              "togetherRate": 0.3027823240589198,
+              "overallRate": 0.2565406976744186,
+              "lift": 1.180250645623438
             },
             {
               "id": "Trickstar::이사라 마오",
@@ -4610,18 +4559,6 @@
           "selectedCount": 280,
           "recommendations": [
             {
-              "id": "Crazy:B::오오카와 코하쿠",
-              "unit": "Crazy:B",
-              "name": "오오카와 코하쿠",
-              "pairCount": 11,
-              "baseCount": 271,
-              "populationCount": 1366,
-              "overallCount": 26,
-              "togetherRate": 0.04059040590405904,
-              "overallRate": 0.01903367496339678,
-              "lift": 2.132557479420948
-            },
-            {
               "id": "ALKALOID::시라토리 아이라",
               "unit": "ALKALOID",
               "name": "시라토리 아이라",
@@ -4644,6 +4581,18 @@
               "togetherRate": 0.2825278810408922,
               "overallRate": 0.14180749448934607,
               "lift": 1.9923339175992452
+            },
+            {
+              "id": "유성대::센고쿠 시노부",
+              "unit": "유성대",
+              "name": "센고쿠 시노부",
+              "pairCount": 94,
+              "baseCount": 277,
+              "populationCount": 1374,
+              "overallCount": 250,
+              "togetherRate": 0.33935018050541516,
+              "overallRate": 0.18195050946142652,
+              "lift": 1.8650685920577617
             }
           ]
         },
@@ -4830,28 +4779,16 @@
           "selectedCount": 241,
           "recommendations": [
             {
-              "id": "Crazy:B::오오카와 코하쿠",
-              "unit": "Crazy:B",
-              "name": "오오카와 코하쿠",
-              "pairCount": 10,
-              "baseCount": 237,
-              "populationCount": 1379,
-              "overallCount": 26,
-              "togetherRate": 0.04219409282700422,
-              "overallRate": 0.01885424220449601,
-              "lift": 2.237909769555339
-            },
-            {
               "id": "Crazy:B::오우카와 코하쿠",
               "unit": "Crazy:B",
               "name": "오우카와 코하쿠",
-              "pairCount": 101,
+              "pairCount": 111,
               "baseCount": 237,
               "populationCount": 1379,
-              "overallCount": 326,
-              "togetherRate": 0.4261603375527427,
-              "overallRate": 0.2364031907179115,
-              "lift": 1.8026843726540862
+              "overallCount": 352,
+              "togetherRate": 0.46835443037974683,
+              "overallRate": 0.25525743292240755,
+              "lift": 1.8348317031070196
             },
             {
               "id": "유성대::센고쿠 시노부",
@@ -4864,6 +4801,18 @@
               "togetherRate": 0.26778242677824265,
               "overallRate": 0.18273381294964028,
               "lift": 1.4654235166210918
+            },
+            {
+              "id": "유성대::나구모 테토라",
+              "unit": "유성대",
+              "name": "나구모 테토라",
+              "pairCount": 30,
+              "baseCount": 239,
+              "populationCount": 1390,
+              "overallCount": 120,
+              "togetherRate": 0.12552301255230125,
+              "overallRate": 0.08633093525179855,
+              "lift": 1.4539748953974894
             }
           ]
         },
@@ -5050,28 +4999,16 @@
           "selectedCount": 381,
           "recommendations": [
             {
-              "id": "Crazy:B::오오카와 코하쿠",
-              "unit": "Crazy:B",
-              "name": "오오카와 코하쿠",
-              "pairCount": 13,
-              "baseCount": 378,
-              "populationCount": 1344,
-              "overallCount": 26,
-              "togetherRate": 0.03439153439153439,
-              "overallRate": 0.019345238095238096,
-              "lift": 1.7777777777777777
-            },
-            {
               "id": "Crazy:B::오우카와 코하쿠",
               "unit": "Crazy:B",
               "name": "오우카와 코하쿠",
-              "pairCount": 138,
+              "pairCount": 151,
               "baseCount": 378,
               "populationCount": 1344,
-              "overallCount": 313,
-              "togetherRate": 0.36507936507936506,
-              "overallRate": 0.23288690476190477,
-              "lift": 1.5676251331203406
+              "overallCount": 339,
+              "togetherRate": 0.3994708994708995,
+              "overallRate": 0.25223214285714285,
+              "lift": 1.5837430350704689
             },
             {
               "id": "홍월::타키 이부키",
@@ -5084,6 +5021,18 @@
               "togetherRate": 0.22459893048128343,
               "overallRate": 0.14617691154422788,
               "lift": 1.5364870423693955
+            },
+            {
+              "id": "fine::히메미야 토리",
+              "unit": "fine",
+              "name": "히메미야 토리",
+              "pairCount": 115,
+              "baseCount": 376,
+              "populationCount": 1338,
+              "overallCount": 267,
+              "togetherRate": 0.3058510638297872,
+              "overallRate": 0.19955156950672645,
+              "lift": 1.5326918479560123
             }
           ]
         }
@@ -5176,13 +5125,6 @@
           "unit": "Crazy:B",
           "name": "아마기 린네",
           "selectedCount": 22,
-          "recommendations": []
-        },
-        {
-          "id": "Crazy:B::오오카와 코하쿠",
-          "unit": "Crazy:B",
-          "name": "오오카와 코하쿠",
-          "selectedCount": 0,
           "recommendations": []
         },
         {
@@ -5920,13 +5862,6 @@
           "unit": "Crazy:B",
           "name": "아마기 린네",
           "selectedCount": 6,
-          "recommendations": []
-        },
-        {
-          "id": "Crazy:B::오오카와 코하쿠",
-          "unit": "Crazy:B",
-          "name": "오오카와 코하쿠",
-          "selectedCount": 0,
           "recommendations": []
         },
         {
