@@ -1,11 +1,14 @@
+import { loadQuizAudio, forgetQuizAudio } from "./quizAudioCache";
 import React, { useState, useEffect, useRef, useMemo } from "react";
 import type { Lang, MsgKey } from "./i18n";
 import type { Agency } from "./types";
 import { loadAgencies, loadCsv, stripQuotes } from "./csv";
 import { localizeAgencies } from "./localize";
-import { SHUFFLE_UNIT_ID, FUSION_UNIT_ID, COLLAB_UNIT_ID, SOLO_UNIT_ID, classifyQuizSongUnit, makeOfficialUnitAliases, makeSoloArtistAliases } from "./quizUnits";
-export { SHUFFLE_UNIT_ID, FUSION_UNIT_ID, COLLAB_UNIT_ID, SOLO_UNIT_ID } from "./quizUnits";
+import { SHUFFLE_UNIT_ID, FUSION_UNIT_ID, COLLAB_UNIT_ID, SOLO_UNIT_ID, JA_UNIT_ID, classifyQuizSongUnit, makeOfficialUnitAliases, makeSoloArtistAliases } from "./quizUnits";
+export { SHUFFLE_UNIT_ID, FUSION_UNIT_ID, COLLAB_UNIT_ID, SOLO_UNIT_ID, JA_UNIT_ID } from "./quizUnits";
 import "./quiz.css";
+import { chooseClipStart, parseStartSeconds } from "./quizPlayback";
+import type { ClipMode } from "./quizPlayback";
 import ImagePreviewModal from "./components/ImagePreviewModal";
 import { withTimeout, copyText } from "./utils";
 import { triggerDownload, blobToDataUrl } from "./imageExport";
@@ -17,16 +20,19 @@ import { saveQuizCompletion } from "./quizResults";
 import type { QuizPool } from "./quizResults";
 import { loadQuizPercentileData, calculateQuizPercentile } from "./quizPercentiles";
 import { getAcceptedAnswers, normalizeAnswer, isCorrectGuess } from "./quizAnswer";
+import { findQuizSongSuggestions } from "./quizSuggestions";
 export { normalizeAnswer, isCorrectGuess } from "./quizAnswer";
 import type { QuizPercentile } from "./quizPercentiles";
 import {
   QUIZ_SHARE_HASHTAGS,
+  buildQuizNativeShareText,
   buildQuizShareUrl,
   buildTweetIntentUrl,
   parseQuizChallenge,
-  renderQuizResultBlob
+  renderQuizResultBlob,
+  summarizeQuizPlayRecords
 } from "./quizShare";
-import type { QuizResultInfo, ResultCardText, TopSongLine } from "./quizShare";
+import type { QuizResultInfo, ResultCardText } from "./quizShare";
 
 export interface SongItem {
   id: string;
@@ -37,6 +43,7 @@ export interface SongItem {
   titleJa: string;
   aliases: string[];
   videoId: string;
+  audioUrl?: string; // 선택 사항: 같은 YouTube 영상에서 준비한 오디오 파일 (없으면 기존 YouTube 재생)
   startMin: number;
   endMax: number;
 }
@@ -46,7 +53,6 @@ interface HistoryItem {
   correct: boolean;
   tries: number; // 정답 제출까지의 총 시도 횟수 (정답 포함)
   clipSec: number; // 정답/포기 시점에 설정돼 있던 듣기 길이(초)
-  hint: boolean; // 유닛 힌트를 봤는지
   score: number; // 이 문제의 점수 (0~100)
   listens: number; // 이 문제에서 구간을 재생한 총 횟수 (같은 구간 반복 포함)
 }
@@ -156,27 +162,36 @@ function buildResultCardText(
   easy: boolean,
   percent: number,
   score: number,
-  ranked: { item: HistoryItem; idx: number }[],
-  lang: Lang
+  history: HistoryItem[],
+  lang: Lang,
+  clipMode: ClipMode
 ): ResultCardText {
-  // 점수 높은 정답 곡 3개 (포기한 곡은 제외)
-  const top: TopSongLine[] = ranked
-    .filter((x) => x.item.correct)
-    .slice(0, 3)
-    .map((x, i) => ({
-      rank: i + 1,
-      title: primaryTitle(x.item.song, lang),
-      meta: tt("quizSongMeta", { sec: x.item.clipSec, listens: x.item.listens, tries: x.item.tries }),
-      score: `${x.item.score}${tt("quizScoreUnit")}`
-    }));
+  const stats = summarizeQuizPlayRecords(history.map((h) => ({
+    correct: h.correct,
+    listens: h.listens,
+    tries: h.tries,
+    clipSec: h.clipSec,
+    score: h.score,
+    title: primaryTitle(h.song, lang)
+  })));
   return {
     title: tt("quizTitle"),
     rateLabel: tt("quizSummaryRateLabel"),
     detail: tt("quizSummaryScoreDetail", { total, correct }),
-    modeLabel: easy ? tt("quizModeEasyShort") : tt("quizModeHardShort"),
+    modeLabel: `${easy ? tt("quizModeEasyShort") : tt("quizModeHardShort")} · ${tt(clipMode === "start" ? "quizClipStart" : "quizClipRandom")}`,
     scoreText: tt("quizScoreLine", { score }),
-    topTitle: tt("quizShareTop3Title"),
-    top,
+    stats,
+    statsTitle: tt("quizCardStatsTitle"),
+    onceLabel: tt("quizBreakdownPerfect"),
+    repeatedLabel: tt("quizBreakdownOther"),
+    unansweredLabel: tt("quizBreakdownGiveup"),
+    songsUnit: tt("quizCardSongsUnit"),
+    noAudioNote: tt("quizCardNoAudio", { count: stats.noAudio }),
+    hardestTitle: tt("quizCardHardest"),
+    hardestEmpty: tt("quizCardHardestEmpty"),
+    hardestMeta: stats.hardest ? tt("quizCardHardestMeta", {
+      listens: stats.hardest.listens, tries: stats.hardest.tries
+    }) : "",
     footer: window.location.host + window.location.pathname.replace(/\/$/, ""),
     percent
   };
@@ -208,12 +223,13 @@ export default function SongQuiz({ lang, t }: SongQuizProps) {
 
   // 난이도: true = 초보자 모드(자동완성 후보 표시), false = 하드 모드(직접 입력 + 부호/대소문자 보정)
   const [easyMode, setEasyMode] = useState<boolean>(true);
+  const [clipMode, setClipMode] = useState<ClipMode>("random");
 
   // 문제 수 설정: 5, 10, 30, 또는 "custom"
   const [countPreset, setCountPreset] = useState<5 | 10 | 30 | "custom">(10);
   const [customCountInput, setCustomCountInput] = useState<string>("15");
 
-  // 선택된 유닛 필터 (16개 정규 유닛 + 셔플곡 + 퓨전곡 + 콜라보곡 + 솔로곡)
+  // 선택된 유닛 필터 (16개 정규 유닛 + 셔플곡 + 퓨전곡 + 콜라보곡 + 솔로곡 + J&A)
   const allUnits = useMemo(() => {
     const base = quizAgencies.flatMap((a) => a.groups.map((g) => ({ id: g.id, name: g.name })));
     // 셔플곡이 1곡이라도 있으면 '셔플곡' 필터 버튼 추가
@@ -230,13 +246,16 @@ export default function SongQuiz({ lang, t }: SongQuizProps) {
     if (songs.some((s) => s.unit === SOLO_UNIT_ID)) {
       base.push({ id: SOLO_UNIT_ID, name: tRef.current("quizSoloUnit") });
     }
+    if (songs.some((s) => s.unit === JA_UNIT_ID)) {
+      base.push({ id: JA_UNIT_ID, name: tRef.current("quizJAUnit") });
+    }
     return base;
   }, [quizAgencies, songs, lang]);
 
   // 정규 유닛은 현재 유닛의 소속사별로, 나머지는 별도 섹션에 표시합니다.
   // 이 목록은 필터 UI 전용이므로 출제/정답 판정 및 선택 상태에 영향을 주지 않습니다.
   const otherQuizUnits = useMemo(() => {
-    const categoryIds = new Set([SHUFFLE_UNIT_ID, FUSION_UNIT_ID, COLLAB_UNIT_ID, SOLO_UNIT_ID]);
+    const categoryIds = new Set([SHUFFLE_UNIT_ID, FUSION_UNIT_ID, COLLAB_UNIT_ID, SOLO_UNIT_ID, JA_UNIT_ID]);
     return allUnits.filter((unit) => categoryIds.has(unit.id));
   }, [allUnits]);
 
@@ -249,6 +268,7 @@ export default function SongQuiz({ lang, t }: SongQuizProps) {
     m[FUSION_UNIT_ID] = tRef.current("quizFusionUnit");
     m[COLLAB_UNIT_ID] = tRef.current("quizCollabUnit");
     m[SOLO_UNIT_ID] = tRef.current("quizSoloUnit");
+    m[JA_UNIT_ID] = tRef.current("quizJAUnit");
     return m;
   }, [allUnits, lang]);
 
@@ -291,8 +311,33 @@ export default function SongQuiz({ lang, t }: SongQuizProps) {
   const [startSec, setStartSec] = useState<number>(20);
   const [tries, setTries] = useState<number>(0);
   const [status, setStatus] = useState<"playing" | "correct" | "giveup">("playing");
+
+  // 마지막 문제의 정답/포기가 확정되면 한 판 완료를 즉시 기록합니다.
+  // 이전 구현은 별도의 '결과 보기' 버튼을 눌러야 기록되어 완료율이 낮게 집계될 수 있었습니다.
+  useEffect(() => {
+    if (phase !== "playing" || status === "playing" ||
+        questionQueue.length === 0 || history.length !== questionQueue.length) return;
+    const runId = runIdRef.current;
+    if (!runId || completedRunRef.current === runId) return;
+    completedRunRef.current = runId; // 동일 게임 중복 이벤트/저장 방지
+    const summary = summarizeHistory(history, questionQueue.length);
+    const mode = easyMode ? "easy" : "hard";
+    const pool = runPoolRef.current;
+    trackAnalyticsEvent("quiz_completed", {
+      difficulty: mode,
+      clip_mode: clipMode,
+      question_count: questionQueue.length,
+      pool_type: pool,
+      score: summary.score
+    });
+    if (clipMode === "start") return;
+    void saveQuizCompletion({
+      attemptId: runId, mode, questionCount: questionQueue.length, pool,
+      score: summary.score, perfect: summary.perfect,
+      otherCorrect: summary.otherCorrect, giveup: summary.giveup
+    }).catch((err) => console.warn("퀴즈 점수 저장 실패 (게임은 정상 진행):", err));
+  }, [phase, status, history, questionQueue.length, easyMode, clipMode]);
   const [wrongShake, setWrongShake] = useState(false);
-  const [showUnitHint, setShowUnitHint] = useState(false);
   const [guess, setGuess] = useState("");
   const [showSuggestions, setShowSuggestions] = useState(false);
   const [listenCount, setListenCount] = useState(0); // 이 문제에서 들은 횟수
@@ -304,15 +349,36 @@ export default function SongQuiz({ lang, t }: SongQuizProps) {
   const listenCountedRef = useRef(false);
   const playReqRef = useRef(0); // 재생 요청 번호 (연속 클릭 시 마지막 요청만 실행)
   const loadedVideoIdRef = useRef<string>(""); // 플레이어에 실제로 올라가 있는 영상
+  // 현재 문제의 비공개 준비 상태를 관리합니다. 정답 화면에서는 다음 문제를 cue하지 않습니다.
+  const nextCuedRef = useRef<{ questionId: string; videoId: string; start: number } | null>(null);
 
   // 플레이어 상태
   const playerRef = useRef<any>(null);
   const playerReadyRef = useRef(false);
+  // 자체 음원과 정답 YouTube 영상은 재생기를 분리합니다.
+  const localAudioRef = useRef<HTMLAudioElement | null>(null);
+  const localPlayCleanupRef = useRef<(() => void) | null>(null);
+  const localPlaybackStopRef = useRef<number | null>(null);
+  // 한 번 실패한 파일은 이 퀴즈 화면을 이용하는 동안 다시 요청하지 않습니다.
+  const failedAudioUrlsRef = useRef(new Set<string>());
+  const [failedAudioVersion, setFailedAudioVersion] = useState(0);
+  const usesHostedAudio = (song: SongItem | null): boolean =>
+    !!song?.audioUrl && !failedAudioUrlsRef.current.has(song.audioUrl);
+  const usingHostedAudio = usesHostedAudio(currentSong);
   const playerHostRef = useRef<HTMLDivElement>(null);
   const quizCardRef = useRef<HTMLDivElement>(null);
   const stopTimerRef = useRef<number | null>(null);
   const loadWatchdogRef = useRef<number | null>(null);
   const pendingPlayRef = useRef(false);
+  // 정답/포기 화면의 YouTube 영상은 퀴즈용 시간 제한 없이 재생할 수 있습니다.
+  // onStateChange 콜백은 플레이어 생성 시 등록되므로 최신 값을 ref로 읽습니다.
+  const revealedPlaybackRef = useRef(false);
+  // 각 문제를 시작하자마자 YouTube 플레이어를 큐에 올려 놓습니다.
+  // cueVideoById는 음원을 미리 다운로드하거나 광고를 없애는 기능이 아닙니다.
+  const primeRequestRef = useRef<{ questionId: string; videoId: string; start: number } | null>(null);
+  const primeSerialRef = useRef(0);
+  const primeTimeoutRef = useRef<number | null>(null);
+  const [preparingAudio, setPreparingAudio] = useState(false);
   const activeVideoIdRef = useRef<string>("");
   const clipDurationRef = useRef(clipDuration);
   clipDurationRef.current = clipDuration;
@@ -322,6 +388,9 @@ export default function SongQuiz({ lang, t }: SongQuizProps) {
   const [isPlayingAudio, setIsPlayingAudio] = useState(false);
   const [loadingAudio, setLoadingAudio] = useState(false);
   const [playerError, setPlayerError] = useState(false);
+  const [autoplayBlocked, setAutoplayBlocked] = useState(false);
+  // X(트위터) 등 인앱 브라우저는 YouTube iframe 소리 재생을 제한할 수 있습니다.
+  const isInAppBrowser = typeof navigator !== "undefined" && IN_APP_BROWSER.test(navigator.userAgent);
 
   // songs.csv의 unit이 정규 16개 유닛 중 하나가 아니라면 셔플곡으로 자동 분류.
   // 서로 다른 정규 유닛이 합쳐진 이름(&, ×, VS 등)은 퓨전곡으로 분류한다.
@@ -332,9 +401,30 @@ export default function SongQuiz({ lang, t }: SongQuizProps) {
       try {
         // 앱에서 현재 보고 있던 시트의 agencies를 받지 않고, 항상 unit 기반 16개 유닛을 로드합니다.
         // Firestore 요청은 발생하지 않으며 CSV는 배포 버전별 브라우저 캐시를 재사용합니다.
-        const [currentAgencies, memberRows, songRows] = await Promise.all([
-          loadAgencies(), loadCsv("ES_list.csv"), loadCsv("songs.csv")
+        const [currentAgencies, memberRows, songRows, audioManifest] = await Promise.all([
+          loadAgencies(), loadCsv("ES_list.csv"), loadCsv("songs.csv"),
+          // 없는 경우 빈 목록으로 처리: 기존 YouTube 퀴즈를 망가뜨리지 않습니다.
+          fetch(`${process.env.PUBLIC_URL || "."}/audio-manifest.json`)
+            .then(async (response) => response.ok ? await response.json() : {})
+            .then((value) => (value && typeof value === "object" && !Array.isArray(value))
+              ? (value as Record<string, unknown>) : {})
+            .catch(() => ({} as Record<string, unknown>))
         ]);
+        const availableAudio = (audioManifest.videos && typeof audioManifest.videos === "object")
+          ? audioManifest.videos as Record<string, string>
+          : {};
+        const makeAudioUrl = (url: string) => {
+          const value = url.trim();
+          if (!value) return undefined;
+          if (/^https?:\/\//i.test(value) || value.startsWith("/")) return value;
+          const relative = value.replace(/^\.\//, "");
+          if (relative.startsWith("audio/")) {
+            const base = (process.env.REACT_APP_AUDIO_BASE_URL || "https://pickyourstar-audio.dukae03.workers.dev").replace(/\/+$/, "");
+            // Encode path segments so #, ?, spaces and non-ASCII song titles stay in the key.
+            return `${base}/${relative.split("/").map(part => encodeURIComponent(part)).join("/")}`;
+          }
+          return `${process.env.PUBLIC_URL || "."}/${relative}`;
+        };
         if (cancelled) return;
         setQuizBaseAgencies(currentAgencies);
         const officialAliases = makeOfficialUnitAliases(currentAgencies.flatMap((a) => a.groups));
@@ -361,7 +451,7 @@ export default function SongQuiz({ lang, t }: SongQuizProps) {
             .split(/[|,]/)
             .map((s) => s.trim())
             .filter(Boolean);
-          const startMin = Math.max(0, Number(stripQuotes(r.start_min || "")) || 15);
+          const startMin = parseStartSeconds(stripQuotes(r.start_min || ""));
           const endMax = Math.max(0, Number(stripQuotes(r.end_max || "")) || 0);
 
           parsed.push({
@@ -374,6 +464,7 @@ export default function SongQuiz({ lang, t }: SongQuizProps) {
             titleJa: tJa || fallbackTitle,
             aliases,
             videoId,
+            audioUrl: makeAudioUrl(stripQuotes(r.audio_url || "") || availableAudio[videoId] || ""),
             startMin,
             endMax
           });
@@ -402,7 +493,8 @@ export default function SongQuiz({ lang, t }: SongQuizProps) {
 
   // 현재 선택된 유닛에 해당하는 곡 목록
   const filteredSongs = useMemo(
-    () => songs.filter((s) => selectedUnits.has(s.unit)),
+    () => songs.filter((s) => selectedUnits.has(s.unit) &&
+      (process.env.REACT_APP_QUIZ_AUDIO_TEST_ONLY !== "true" || !!s.audioUrl)),
     [songs, selectedUnits]
   );
 
@@ -414,16 +506,25 @@ export default function SongQuiz({ lang, t }: SongQuizProps) {
     return Math.min(100, n);
   }, [countPreset, customCountInput]);
 
-  // 무작위 시작 위치(초) 뽑기
-  const pickRandomStart = (song: SongItem, durationSec?: number) => {
-    const minS = song.startMin || 15;
-    const maxS =
-      song.endMax > minS + 5
-        ? song.endMax
-        : durationSec && durationSec > minS + 20
-        ? Math.floor(durationSec - 15)
-        : 95;
-    return minS + Math.floor(Math.random() * Math.max(1, maxS - minS));
+  // Both local MP3 and YouTube use the same CSV-based timeline.
+  const pickClipStart = (song: SongItem, durationSec?: number) =>
+    chooseClipStart(song, clipMode, durationSec);
+
+  const clearLocalPlayback = () => {
+    if (localPlaybackStopRef.current !== null) {
+      window.clearInterval(localPlaybackStopRef.current);
+      localPlaybackStopRef.current = null;
+    }
+    localPlayCleanupRef.current?.();
+    localPlayCleanupRef.current = null;
+    try { localAudioRef.current?.pause(); } catch { /* ignore */ }
+  };
+
+  const clearPrimeTimeout = () => {
+    if (primeTimeoutRef.current !== null) {
+      window.clearTimeout(primeTimeoutRef.current);
+      primeTimeoutRef.current = null;
+    }
   };
 
   const clearTimers = () => {
@@ -438,8 +539,15 @@ export default function SongQuiz({ lang, t }: SongQuizProps) {
   };
 
   const stopPlayerSafely = () => {
+    clearLocalPlayback();
+    revealedPlaybackRef.current = false;
     clearTimers();
+    clearPrimeTimeout();
+    playReqRef.current += 1; // 이전 비동기 재생 요청 무효화
+    primeSerialRef.current += 1;
+    primeRequestRef.current = null;
     pendingPlayRef.current = false;
+    setPreparingAudio(false);
     setIsPlayingAudio(false);
     setLoadingAudio(false);
     try {
@@ -453,6 +561,8 @@ export default function SongQuiz({ lang, t }: SongQuizProps) {
   useEffect(() => {
     return () => {
       clearTimers();
+      clearLocalPlayback();
+      clearPrimeTimeout();
       if (wrongTimerRef.current !== null) window.clearTimeout(wrongTimerRef.current);
       try {
         playerRef.current?.destroy?.();
@@ -465,20 +575,54 @@ export default function SongQuiz({ lang, t }: SongQuizProps) {
   }, []);
 
   // 플레이어를 만들거나(첫 실행) 이미 있으면 해당 영상을 재생
-  const ensurePlayerAndPlay = async (videoId: string, targetStart: number, durSec: number) => {
-    const reqId = ++playReqRef.current; // 연속으로 눌러도 가장 마지막 요청만 실행
-    listenCountedRef.current = false; // 이 요청에서 실제로 재생이 시작되면 한 번만 횟수에 더함
-    clearTimers();
-    setPlayerError(false);
-    clipDurationRef.current = durSec;
-    startSecRef.current = targetStart;
-    pendingPlayRef.current = true;
-    activeVideoIdRef.current = videoId; // 플레이어가 아직 준비 중이어도 onReady에서 이 값을 사용
-    setLoadingAudio(true);
+  const ensurePlayerAndPlay = async (
+    videoId: string,
+    targetStart: number,
+    durSec: number,
+    prepareOnly = false
+  ) => {
+    const reqId = prepareOnly ? playReqRef.current : ++playReqRef.current;
+    const primeSerial = prepareOnly ? ++primeSerialRef.current : primeSerialRef.current;
+    if (prepareOnly) {
+      // 문제 화면에 진입했을 때만 영상 정보를 미리 준비합니다. 소리는 재생하지 않습니다.
+      const song = currentSongRef.current;
+      if (!song || song.videoId !== videoId || pendingPlayRef.current) return;
+      primeRequestRef.current = { questionId: song.id, videoId, start: targetStart };
+      clearPrimeTimeout();
+      primeTimeoutRef.current = window.setTimeout(() => {
+        // 외부에서 YouTube를 차단해도 '준비 중' 문구가 무한히 남지 않도록 합니다.
+        if (primeSerial === primeSerialRef.current && !pendingPlayRef.current) {
+          primeSerialRef.current += 1;
+          primeRequestRef.current = null;
+          setPreparingAudio(false);
+        }
+      }, 15000);
+      setPreparingAudio(true);
+    } else {
+      clearPrimeTimeout();
+      primeRequestRef.current = null;
+      setPreparingAudio(false);
+      listenCountedRef.current = false; // 실제 PLAYING 이벤트를 받은 재생만 카운트
+      clearTimers();
+      setPlayerError(false);
+      setAutoplayBlocked(false);
+      clipDurationRef.current = durSec;
+      startSecRef.current = targetStart;
+      pendingPlayRef.current = true;
+      activeVideoIdRef.current = videoId;
+      setLoadingAudio(true);
+    }
 
-    loadWatchdogRef.current = window.setTimeout(() => {
+    if (!prepareOnly) loadWatchdogRef.current = window.setTimeout(() => {
+      if (reqId !== playReqRef.current || !pendingPlayRef.current) return;
+      // 준비는 됐지만 인앱 브라우저에서 실제 PLAYING 이벤트가 오지 않을 수도 있습니다.
+      // 무한 로딩을 끝내고 다시 눌러 보거나 외부 브라우저로 열도록 안내합니다.
+      clearTimers();
+      playReqRef.current += 1; // 시간이 지난 비동기 요청이 나중에 재생하지 못하도록 무효화
+      pendingPlayRef.current = false;
       setLoadingAudio(false);
-      // 8초가 지나도 플레이어가 준비되지 않으면 정리해서 다음 클릭 때 새로 만들 수 있게 함
+      setIsPlayingAudio(false);
+      setPlayerError(true);
       if (playerRef.current && !playerReadyRef.current) {
         try {
           playerRef.current.destroy?.();
@@ -486,8 +630,6 @@ export default function SongQuiz({ lang, t }: SongQuizProps) {
           /* ignore */
         }
         playerRef.current = null;
-        pendingPlayRef.current = false;
-        setPlayerError(true);
       }
     }, 8000);
 
@@ -495,7 +637,13 @@ export default function SongQuiz({ lang, t }: SongQuizProps) {
     try {
       YT = await loadYouTubeApi();
     } catch {
-      if (reqId === playReqRef.current) {
+      if (prepareOnly) {
+        if (primeSerial === primeSerialRef.current) {
+          clearPrimeTimeout();
+          primeRequestRef.current = null;
+          setPreparingAudio(false);
+        }
+      } else if (reqId === playReqRef.current) {
         clearTimers();
         pendingPlayRef.current = false;
         setLoadingAudio(false);
@@ -503,16 +651,52 @@ export default function SongQuiz({ lang, t }: SongQuizProps) {
       }
       return;
     }
-    if (reqId !== playReqRef.current) return; // 그사이 더 새로운 요청이 있었음
+    if (reqId !== playReqRef.current || (prepareOnly && primeSerial !== primeSerialRef.current)) return;
     if (!playerHostRef.current) {
-      setLoadingAudio(false);
+      if (prepareOnly) {
+        clearPrimeTimeout();
+        setPreparingAudio(false);
+      } else setLoadingAudio(false);
       return;
     }
 
     if (playerRef.current) {
       if (!playerReadyRef.current) return; // 만드는 중이면 onReady에서 처리
       try {
-        if (loadedVideoIdRef.current !== videoId) {
+        if (prepareOnly) {
+          const nextCue = nextCuedRef.current;
+          const alreadyCued = nextCue !== null &&
+            nextCue.questionId === currentSongRef.current?.id &&
+            nextCue.videoId === videoId && nextCue.start === targetStart &&
+            playerRef.current.getPlayerState?.() === 5 &&
+            playerRef.current.getVideoData?.()?.video_id === videoId;
+          if (alreadyCued) {
+            clearPrimeTimeout();
+            primeRequestRef.current = null;
+            setPreparingAudio(false);
+          } else {
+            playerRef.current.pauseVideo?.();
+            loadedVideoIdRef.current = videoId;
+            nextCuedRef.current = {
+              questionId: currentSongRef.current!.id, videoId, start: targetStart
+            };
+            playerRef.current.cueVideoById({ videoId, startSeconds: targetStart });
+          }
+          return;
+        }
+        const cued = nextCuedRef.current;
+        const matchesCue = cued !== null &&
+          cued.questionId === currentSongRef.current?.id &&
+          cued.videoId === videoId && cued.start === targetStart;
+        // 이미 큐 준비가 끝났을 때만 playVideo로 시작합니다.
+        // 아직 CUED가 아니라면 이전 cue 요청에 의존하지 않고 정상 로드를 시도합니다.
+        const cueIsReady = matchesCue &&
+          playerRef.current.getPlayerState?.() === 5 &&
+          playerRef.current.getVideoData?.()?.video_id === videoId;
+        nextCuedRef.current = null;
+        if (cueIsReady) {
+          playerRef.current.playVideo();
+        } else if (loadedVideoIdRef.current !== videoId || matchesCue) {
           loadedVideoIdRef.current = videoId;
           playerRef.current.loadVideoById({ videoId, startSeconds: targetStart });
         } else {
@@ -531,43 +715,76 @@ export default function SongQuiz({ lang, t }: SongQuizProps) {
       }
     }
 
-    const el = document.createElement("div");
+    // 일반 YouTube 임베드: 로그인 상태를 사용할 수 있도록 youtube.com을 사용합니다.
+    // 광고 제거 기능은 아니며, IFrame API는 계속 공식 API를 사용합니다.
+    // 별도 iframe을 만들면 YT.Player의 비공식 host 옵션에 의존하지 않아도 됩니다.
+    const iframe = document.createElement("iframe");
+    const params = new URLSearchParams({
+      enablejsapi: "1",
+      origin: window.location.origin,
+      playsinline: "1",
+      controls: "1",
+      rel: "0",
+      autoplay: "0",
+      start: String(Math.floor(targetStart))
+    });
+    iframe.src = `https://www.youtube.com/embed/${videoId}?${params.toString()}`;
+    iframe.title = "YouTube video player";
+    iframe.setAttribute("allow", "autoplay; encrypted-media; picture-in-picture; fullscreen");
+    iframe.setAttribute("allowfullscreen", "");
+    iframe.setAttribute("frameborder", "0");
+    iframe.style.width = "100%";
+    iframe.style.height = "100%";
+
     playerHostRef.current.innerHTML = "";
-    playerHostRef.current.appendChild(el);
+    playerHostRef.current.appendChild(iframe);
     loadedVideoIdRef.current = videoId;
 
-    playerRef.current = new YT.Player(el, {
-      width: "100%",
-      height: "100%",
-      videoId,
-      playerVars: {
-        autoplay: 1,
-        playsinline: 1,
-        controls: 1,
-        rel: 0,
-        modestbranding: 1,
-        origin: window.location.origin,
-        start: Math.floor(targetStart)
-      },
+    playerRef.current = new YT.Player(iframe, {
       events: {
         onReady: (event: any) => {
           playerReadyRef.current = true;
-          if (!pendingPlayRef.current) return;
           try {
-            const wanted = activeVideoIdRef.current;
-            if (wanted && wanted !== loadedVideoIdRef.current) {
-              loadedVideoIdRef.current = wanted;
-              event.target.loadVideoById({ videoId: wanted, startSeconds: startSecRef.current });
-            } else {
-              event.target.seekTo(startSecRef.current, true);
-              event.target.playVideo();
+            if (pendingPlayRef.current) {
+              const wanted = activeVideoIdRef.current;
+              if (wanted && wanted !== loadedVideoIdRef.current) {
+                loadedVideoIdRef.current = wanted;
+                event.target.loadVideoById({ videoId: wanted, startSeconds: startSecRef.current });
+              } else {
+                event.target.seekTo(startSecRef.current, true);
+                event.target.playVideo();
+              }
+            } else if (primeRequestRef.current) {
+              const prime = primeRequestRef.current;
+              loadedVideoIdRef.current = prime.videoId;
+              nextCuedRef.current = { ...prime };
+              event.target.cueVideoById({ videoId: prime.videoId, startSeconds: prime.start });
             }
           } catch {
-            /* ignore */
+            clearPrimeTimeout();
+            primeRequestRef.current = null;
+            setPreparingAudio(false);
           }
         },
         onStateChange: (event: any) => {
           if (event.data === 1) {
+            // 정답 공개 후에는 플레이어의 재생 버튼으로 전곡을 자유롭게 들을 수 있습니다.
+            // 문제 풀이의 1초 타이머/재생 횟수와 완전히 분리합니다.
+            if (revealedPlaybackRef.current) {
+              clearTimers();
+              pendingPlayRef.current = false;
+              setLoadingAudio(false);
+              setIsPlayingAudio(false);
+              return;
+            }
+            // 재생 요청이 이미 취소됐거나 끝났으면 늦게 도착한 PLAYING을 즉시 중지합니다.
+            // 광고·버퍼링 후 뒤늦게 재개되어 1초 이상 재생되는 상황을 줄이기 위함입니다.
+            if (!pendingPlayRef.current) {
+              try { event.target?.pauseVideo?.(); } catch { /* ignore */ }
+              setIsPlayingAudio(false);
+              setLoadingAudio(false);
+              return;
+            }
             if (pendingPlayRef.current && !listenCountedRef.current) {
               listenCountedRef.current = true;
               setListenCount((c) => c + 1);
@@ -579,6 +796,7 @@ export default function SongQuiz({ lang, t }: SongQuizProps) {
             setLoadingAudio(false);
             setIsPlayingAudio(true);
             setPlayerError(false);
+            setAutoplayBlocked(false);
 
             if (pendingPlayRef.current) {
               if (stopTimerRef.current !== null) {
@@ -600,13 +818,13 @@ export default function SongQuiz({ lang, t }: SongQuizProps) {
               stopTimerRef.current = null;
             }
           } else if (event.data === 5) {
-            if (pendingPlayRef.current) {
-              try {
-                event.target?.seekTo?.(startSecRef.current, true);
-                event.target?.playVideo?.();
-              } catch {
-                /* ignore */
-              }
+            // 큐가 준비되어도 음원 스트림이 다운로드된 것은 아닙니다.
+            // 실제 재생은 사용자가 '1초 듣기'를 누른 뒤 시작됩니다.
+            if (primeRequestRef.current && !pendingPlayRef.current &&
+                event.target?.getVideoData?.()?.video_id === primeRequestRef.current.videoId) {
+              clearPrimeTimeout();
+              primeRequestRef.current = null;
+              setPreparingAudio(false);
             }
           } else if (event.data === 2 || event.data === 0) {
             if (!pendingPlayRef.current) {
@@ -615,8 +833,24 @@ export default function SongQuiz({ lang, t }: SongQuizProps) {
             }
           }
         },
-        onError: () => {
+        onAutoplayBlocked: () => {
+          // YouTube API 공식 이벤트: 브라우저가 스크립트 재생을 차단한 경우
+          if (!pendingPlayRef.current || listenCountedRef.current) return;
           clearTimers();
+          pendingPlayRef.current = false;
+          setIsPlayingAudio(false);
+          setLoadingAudio(false);
+          setAutoplayBlocked(true);
+          setPlayerError(true);
+        },
+        onError: () => {
+          nextCuedRef.current = null;
+          loadedVideoIdRef.current = "";
+          clearTimers();
+          setAutoplayBlocked(false);
+          clearPrimeTimeout();
+          primeRequestRef.current = null;
+          setPreparingAudio(false);
           pendingPlayRef.current = false;
           setIsPlayingAudio(false);
           setLoadingAudio(false);
@@ -634,11 +868,109 @@ export default function SongQuiz({ lang, t }: SongQuizProps) {
     });
   };
 
+  // 자체 음원이 없거나 손상/차단/응답 지연으로 실패하면 같은 구간을 YouTube로 재생합니다.
+  // ref를 먼저 갱신하여 error 이벤트와 play() 실패가 겹쳐도 한 번만 전환합니다.
+  const fallbackToYouTube = (song: SongItem) => {
+    if (currentSongRef.current !== song || !usesHostedAudio(song)) return;
+    const resumePlayback = pendingPlayRef.current;
+    const targetStart = startSecRef.current;
+    const duration = clipDurationRef.current;
+    if (resumePlayback && listenCountedRef.current) {
+      // 실패한 재생을 대체하는 것이므로 듣기 횟수를 이중으로 차감하지 않습니다.
+      setListenCount((count) => Math.max(0, count - 1));
+    }
+    forgetQuizAudio(song.audioUrl!);
+    failedAudioUrlsRef.current.add(song.audioUrl!);
+    stopPlayerSafely();
+    setFailedAudioVersion((version) => version + 1);
+    setPlayerError(false);
+    setAutoplayBlocked(false);
+    // 준비 중 실패하면 소리를 내지 않고, 사용자가 듣기를 요청한 경우에만 자동 재생합니다.
+    if (resumePlayback) void ensurePlayerAndPlay(song.videoId, targetStart, duration);
+  };
+
+  // 자체 음원을 먼저 준비합니다. 실패 시 다음 effect가 YouTube 준비를 이어받습니다.
+  useEffect(() => {
+    if (phase !== "playing" || status !== "playing" || !currentSong || !usingHostedAudio) return;
+    const song = currentSong;
+    const audio = new Audio();
+    audio.preload = "auto";
+    localAudioRef.current = audio;
+    let disposed = false;
+    const controller = new AbortController();
+    let blobUrl: string | null = null;
+    let prepareTimer: number | null = null;
+    const clearPrepareTimer = () => {
+      if (prepareTimer !== null) window.clearTimeout(prepareTimer);
+      prepareTimer = null;
+    };
+    setPreparingAudio(true);
+    const ready = () => {
+      if (!disposed) {
+        clearPrepareTimer();
+        setPreparingAudio(false);
+        setPlayerError(false);
+      }
+    };
+    const failed = () => {
+      if (!disposed) {
+        clearPrepareTimer();
+        controller.abort();
+        fallbackToYouTube(song);
+      }
+    };
+    audio.addEventListener("canplay", ready);
+    audio.addEventListener("error", failed);
+    prepareTimer = window.setTimeout(failed, 25000);
+    void loadQuizAudio(song.audioUrl!, controller.signal).then(blob => {
+      if (disposed || controller.signal.aborted) return;
+      blobUrl = URL.createObjectURL(blob);
+      audio.src = blobUrl;
+      audio.load();
+    }).catch(() => { if (!controller.signal.aborted) failed(); });
+    return () => {
+      disposed = true;
+      controller.abort();
+      clearPrepareTimer();
+      clearLocalPlayback();
+      audio.removeEventListener("canplay", ready);
+      audio.removeEventListener("error", failed);
+      audio.removeAttribute("src");
+      audio.load();
+      if (blobUrl) URL.revokeObjectURL(blobUrl);
+      if (localAudioRef.current === audio) localAudioRef.current = null;
+    };
+  }, [phase, currentSong?.id, status, usingHostedAudio]);
+
+  useEffect(() => {
+    if (phase !== "playing" || status !== "playing" || !currentSong || usingHostedAudio) return;
+    // 전환 함수에서 이미 재생을 시작했다면 cue로 덮어쓰지 않습니다.
+    if (!pendingPlayRef.current) void ensurePlayerAndPlay(currentSong.videoId, startSec, 1, true);
+  }, [phase, currentSong?.id, status, usingHostedAudio, failedAudioVersion]);
+
+  // 공개된 정답 화면에서는 현재 문제 영상만 보여줍니다.
+  // 이때 다음 곡을 cue하면 같은 YouTube iframe에 다음 곡 제목이 노출됩니다.
+  // 다음 문제는 화면 전환 후 비공개 상태에서 준비합니다.
+
   // 특정 문제 객체로 화면 상태 세팅
   const loadQuestionItem = (song: SongItem) => {
+    const priorWasHostedAudio = usesHostedAudio(currentSongRef.current);
     stopPlayerSafely();
+    // 자체 음원 문제에 이전 YouTube player를 남기지 않고,
+    // 자체 음원 -> 원본 YouTube 문제로 넘어갈 때 낡은 player 참조도 제거합니다.
+    if (usesHostedAudio(song) || priorWasHostedAudio) {
+      try { playerRef.current?.destroy?.(); } catch { /* ignore */ }
+      playerRef.current = null;
+      playerReadyRef.current = false;
+      loadedVideoIdRef.current = "";
+      nextCuedRef.current = null;
+    }
     setPlayerError(false);
-    const initialStart = pickRandomStart(song);
+    setAutoplayBlocked(false);
+    const cued = nextCuedRef.current;
+    if (cued?.questionId !== song.id) nextCuedRef.current = null;
+    const initialStart = clipMode === "start" ? song.startMin
+      : cued?.questionId === song.id ? cued.start : pickClipStart(song);
     currentSongRef.current = song;
     setCurrentSong(song);
     setClipDuration(1);
@@ -646,8 +978,8 @@ export default function SongQuiz({ lang, t }: SongQuizProps) {
     setTries(0);
     setListenCount(0);
     setStatus("playing");
-    setShowUnitHint(false);
     setGuess("");
+    setActiveIdx(0);
     setShowSuggestions(false);
   };
 
@@ -676,7 +1008,8 @@ export default function SongQuiz({ lang, t }: SongQuizProps) {
     setPercentile(null);
     runIdRef.current = generateRoomId();
     completedRunRef.current = "";
-    trackAnalyticsEvent("quiz_started", { difficulty: easyMode ? "easy" : "hard", question_count: count, pool_type: pool });
+    trackAnalyticsEvent("quiz_started", { clip_mode: clipMode, difficulty: easyMode ? "easy" : "hard", question_count: count, pool_type: pool });
+    nextCuedRef.current = null;
     setQuestionQueue(finalQueue);
     setQuestionIdx(0);
     setHistory([]);
@@ -688,24 +1021,8 @@ export default function SongQuiz({ lang, t }: SongQuizProps) {
   const handleNextOrFinish = () => {
     const nextIdx = questionIdx + 1;
     if (nextIdx >= questionQueue.length) {
+      nextCuedRef.current = null;
       stopPlayerSafely();
-      const runId = runIdRef.current;
-      if (runId && completedRunRef.current !== runId && history.length === questionQueue.length) {
-        completedRunRef.current = runId; // 더블 클릭·중복 이벤트 방지
-        const summary = summarizeHistory(history, questionQueue.length);
-        const mode = easyMode ? "easy" : "hard";
-        const pool = runPoolRef.current;
-        trackAnalyticsEvent("quiz_completed", {
-          difficulty: mode, question_count: questionQueue.length,
-          pool_type: pool, score: summary.score
-        });
-        // 저장 실패해도 퀴즈 화면이나 결과 이미지에는 영향이 없어야 함.
-        void saveQuizCompletion({
-          attemptId: runId, mode, questionCount: questionQueue.length, pool,
-          score: summary.score, perfect: summary.perfect,
-          otherCorrect: summary.otherCorrect, giveup: summary.giveup
-        }).catch((err) => console.warn("퀴즈 익명 점수 저장 실패 (게임은 정상 진행):", err));
-      }
       setPhase("summary");
     } else {
       setQuestionIdx(nextIdx);
@@ -713,13 +1030,123 @@ export default function SongQuiz({ lang, t }: SongQuizProps) {
     }
   };
 
+  // HTML5 Audio 재생: 원본 영상과 동일한 시간 좌표로 시작해 필요한 길이만 듣습니다.
+  // 광고/YouTube 플레이어는 문제 풀이 화면에서 사용하지 않습니다.
+  const playLocalSnippet = (targetStart: number, duration: number) => {
+    const audio = localAudioRef.current;
+    const song = currentSongRef.current;
+    if (!song) return;
+    if (!audio) {
+      pendingPlayRef.current = true;
+      listenCountedRef.current = false;
+      startSecRef.current = targetStart;
+      clipDurationRef.current = duration;
+      fallbackToYouTube(song);
+      return;
+    }
+    clearLocalPlayback();
+    clearTimers();
+    const requestId = ++playReqRef.current;
+    startSecRef.current = targetStart;
+    clipDurationRef.current = duration;
+    pendingPlayRef.current = true;
+    listenCountedRef.current = false;
+    setAutoplayBlocked(false);
+    setPlayerError(false);
+    setLoadingAudio(true);
+    setIsPlayingAudio(false);
+    const finishAt = targetStart + duration;
+
+    const clean = () => {
+      if (loadWatchdogRef.current !== null) {
+        window.clearTimeout(loadWatchdogRef.current);
+        loadWatchdogRef.current = null;
+      }
+      if (localPlaybackStopRef.current !== null) {
+        window.clearInterval(localPlaybackStopRef.current);
+        localPlaybackStopRef.current = null;
+      }
+      audio.removeEventListener("playing", onPlaying);
+      audio.removeEventListener("waiting", onWaiting);
+      audio.removeEventListener("ended", finish);
+      audio.removeEventListener("error", fail);
+      if (localPlayCleanupRef.current === clean) localPlayCleanupRef.current = null;
+    };
+    const finish = () => {
+      if (requestId !== playReqRef.current) return;
+      clean();
+      audio.pause();
+      pendingPlayRef.current = false;
+      setLoadingAudio(false);
+      setIsPlayingAudio(false);
+    };
+    const fail = () => {
+      if (requestId !== playReqRef.current) return;
+      fallbackToYouTube(song);
+    };
+    const armWatchdog = () => {
+      if (loadWatchdogRef.current !== null) window.clearTimeout(loadWatchdogRef.current);
+      loadWatchdogRef.current = window.setTimeout(fail, 8000);
+    };
+    const onWaiting = () => {
+      if (requestId === playReqRef.current) {
+        setLoadingAudio(true);
+        setIsPlayingAudio(false);
+        armWatchdog();
+      }
+    };
+    const onPlaying = () => {
+      if (requestId !== playReqRef.current) {
+        audio.pause();
+        return;
+      }
+      if (loadWatchdogRef.current !== null) {
+        window.clearTimeout(loadWatchdogRef.current);
+        loadWatchdogRef.current = null;
+      }
+      if (!listenCountedRef.current) {
+        listenCountedRef.current = true;
+        setListenCount((count) => count + 1);
+      }
+      setLoadingAudio(false);
+      setIsPlayingAudio(true);
+      setPreparingAudio(false);
+      if (localPlaybackStopRef.current === null) {
+        // currentTime 기준이므로 버퍼링 중에는 1초가 소모되지 않습니다.
+        localPlaybackStopRef.current = window.setInterval(() => {
+          if (audio.currentTime >= finishAt - 0.025 || audio.ended) finish();
+        }, 25);
+      }
+    };
+    audio.addEventListener("playing", onPlaying);
+    audio.addEventListener("waiting", onWaiting);
+    audio.addEventListener("ended", finish);
+    audio.addEventListener("error", fail);
+    localPlayCleanupRef.current = clean;
+    armWatchdog();
+    try {
+      audio.currentTime = targetStart;
+      void audio.play().catch(fail);
+    } catch {
+      fail();
+    }
+  };
+
   // 1초(또는 연장된 초) 재생 실행
   const playSnippet = (overrideSec?: number, overrideStart?: number, overrideSong?: SongItem) => {
+    // YouTube가 재생을 준비하거나 1초 구간을 틀고 있는 동안 중복 요청하지 않습니다.
+    // 같은 영상은 아래 ensurePlayerAndPlay에서 기존 iframe의 seekTo만 사용합니다.
+    if (pendingPlayRef.current || preparingAudio) return;
     const targetSong = overrideSong ?? currentSong;
     if (!targetSong) return;
 
     const dur = overrideSec ?? clipDuration;
     let targetStart = overrideStart ?? startSec;
+
+    if (usesHostedAudio(targetSong)) {
+      playLocalSnippet(targetStart, dur);
+      return;
+    }
 
     try {
       if (
@@ -729,8 +1156,8 @@ export default function SongQuiz({ lang, t }: SongQuizProps) {
         loadedVideoIdRef.current === targetSong.videoId
       ) {
         const totalDur = Number(playerRef.current.getDuration?.() || 0);
-        if (totalDur > 40 && targetStart >= totalDur - 10) {
-          targetStart = pickRandomStart(targetSong, totalDur);
+        if (clipMode === "random" && totalDur > 40 && targetStart >= totalDur - 10) {
+          targetStart = pickClipStart(targetSong, totalDur);
           setStartSec(targetStart);
         }
       }
@@ -743,6 +1170,7 @@ export default function SongQuiz({ lang, t }: SongQuizProps) {
 
   // +1초 늘리기 (최대 5초)
   const extendDuration = () => {
+    if (pendingPlayRef.current) return;
     const next = Math.min(5, clipDuration + 1);
     setClipDuration(next);
     playSnippet(next, startSec);
@@ -750,12 +1178,13 @@ export default function SongQuiz({ lang, t }: SongQuizProps) {
 
   // 다른 1초 구간 뽑기
   const rerollSpot = () => {
-    if (!currentSong) return;
-    const totalDur =
-      playerRef.current && playerReadyRef.current && loadedVideoIdRef.current === currentSong.videoId
+    if (clipMode !== "random" || pendingPlayRef.current || !currentSong) return;
+    const totalDur = usesHostedAudio(currentSong)
+      ? Number(localAudioRef.current?.duration || 0)
+      : playerRef.current && playerReadyRef.current && loadedVideoIdRef.current === currentSong.videoId
         ? Number(playerRef.current?.getDuration?.() || 0)
         : 0;
-    const nextStart = pickRandomStart(currentSong, totalDur > 0 ? totalDur : undefined);
+    const nextStart = pickClipStart(currentSong, totalDur > 0 ? totalDur : undefined);
     setStartSec(nextStart);
     playSnippet(clipDuration, nextStart);
   };
@@ -771,23 +1200,19 @@ export default function SongQuiz({ lang, t }: SongQuizProps) {
     setShowSuggestions(false);
 
     if (isCorrectGuess(value, currentSong)) {
-      clearTimers();
-      pendingPlayRef.current = false;
-      setIsPlayingAudio(false);
-      setLoadingAudio(false);
+      stopPlayerSafely();
+      revealedPlaybackRef.current = true;
       setStatus("correct");
       setHistory((prev) => [...prev, {
           song: currentSong,
           correct: true,
           tries: nextTries,
           clipSec: clipDuration,
-          hint: showUnitHint,
           listens: listenCount,
           score: calcQuestionScore({
             correct: true,
             wrongCount: nextTries - 1,
             clipSec: clipDuration,
-            hint: showUnitHint,
             listens: listenCount
           })
         }]);
@@ -801,41 +1226,30 @@ export default function SongQuiz({ lang, t }: SongQuizProps) {
   // 포기 / 정답 보기
   const handleGiveUp = () => {
     if (!currentSong || status !== "playing") return;
-    clearTimers();
-    pendingPlayRef.current = false;
-    setIsPlayingAudio(false);
-    setLoadingAudio(false);
+    stopPlayerSafely();
+    revealedPlaybackRef.current = true;
     setStatus("giveup");
-    setHistory((prev) => [...prev, { song: currentSong, correct: false, tries, clipSec: clipDuration, hint: showUnitHint, score: 0, listens: listenCount }]);
+    setHistory((prev) => [...prev, { song: currentSong, correct: false, tries, clipSec: clipDuration, score: 0, listens: listenCount }]);
   };
 
-  // 초보자 모드용 자동완성 후보 목록 (입력 전에는 전체 곡, 입력하면 일치하는 곡만 / 정확히 일치 → 앞부분 일치 → 포함 순)
+  // 모든 언어의 정규 유닛명 + 화면에 표시되는 카테고리명을 검색어로 사용한다.
+  const unitSearchLabels = useMemo(() => {
+    const labels: Record<string, string[]> = {};
+    quizBaseAgencies.forEach((agency) => agency.groups.forEach((g) => {
+      labels[g.id] = [g.id, g.name, g.names?.ko || "", g.names?.en || "", g.names?.ja || ""];
+    }));
+    allUnits.forEach((unit) => {
+      labels[unit.id] = [...(labels[unit.id] || []), unit.name];
+    });
+    return labels;
+  }, [quizBaseAgencies, allUnits]);
+
+  // 초보자 자동완성: 곡 제목 + 유닛 이름(영·한·일/원래 셔플 유닛 이름).
   const suggestions = useMemo(() => {
     if (!easyMode || status !== "playing") return [];
-    const q = normalizeAnswer(guess);
     const pool = filteredSongs.length > 0 ? filteredSongs : songs;
-    if (!q) {
-      return [...pool]
-        .sort((a, b) => primaryTitle(a, lang).localeCompare(primaryTitle(b, lang)))
-        .slice(0, 60);
-    }
-    const scored: { s: SongItem; rank: number }[] = [];
-    pool.forEach((s) => {
-      let best = 99;
-      getAcceptedAnswers(s).forEach((ans) => {
-        const n = normalizeAnswer(ans);
-        if (!n) return;
-        if (n === q) best = Math.min(best, 0);
-        else if (n.startsWith(q)) best = Math.min(best, 1);
-        else if (n.includes(q)) best = Math.min(best, 2);
-      });
-      if (best < 99) scored.push({ s, rank: best });
-    });
-    return scored
-      .sort((a, b) => a.rank - b.rank)
-      .map((x) => x.s)
-      .slice(0, 60);
-  }, [easyMode, status, guess, filteredSongs, songs, lang]);
+    return findQuizSongSuggestions(pool, guess, lang, unitSearchLabels);
+  }, [easyMode, status, guess, filteredSongs, songs, lang, unitSearchLabels]);
 
   // 현재 언어에 맞는 대표 곡 제목 표시 (중복 없는 다른 언어 제목 병기)
   const formatSongDisplay = (s: SongItem): string => {
@@ -903,7 +1317,7 @@ export default function SongQuiz({ lang, t }: SongQuizProps) {
 
   // 배포된 분포 JSON이 활성화되기 전까지는 아무것도 표시하지 않음.
   useEffect(() => {
-    if (phase !== "summary") return;
+    if (phase !== "summary" || clipMode === "start") return;
     let cancelled = false;
     void loadQuizPercentileData().then((data) => {
       if (cancelled) return;
@@ -912,7 +1326,7 @@ export default function SongQuiz({ lang, t }: SongQuizProps) {
       ));
     });
     return () => { cancelled = true; };
-  }, [phase, easyMode, questionQueue.length, runPool, totalScore]);
+  }, [phase, easyMode, questionQueue.length, runPool, totalScore, clipMode]);
 
   // ───────── 결과 공유 (이미지 저장 · X 글쓰기 · 링크 복사) ─────────
   const [challenge, setChallenge] = useState<QuizResultInfo | null>(() => parseQuizChallenge(window.location.hash));
@@ -938,7 +1352,6 @@ export default function SongQuiz({ lang, t }: SongQuizProps) {
   // 지금까지 연속으로 맞힌 문제 수 (정답 직후 연출용)
   let streak = 0;
   for (let i = history.length - 1; i >= 0 && history[i].correct; i--) streak += 1;
-  const resultBlobRef = useRef<Blob | null>(null); // 결과 화면이 뜨면 미리 만들어 둠 (공유 창은 클릭 직후에 열어야 해서)
 
   // 공유 링크로 들어왔다면 친구 기록은 화면에 안내만 하고 주소에서는 지움 (이 주소를 다시 공유해도 남의 기록이 따라가지 않게)
   useEffect(() => {
@@ -953,52 +1366,20 @@ export default function SongQuiz({ lang, t }: SongQuizProps) {
     };
   }, []);
 
-  // 결과 화면이 뜨면 이미지를 미리 그려 둠
-  useEffect(() => {
-    if (phase !== "summary") {
-      resultBlobRef.current = null;
-      return;
-    }
-    let cancelled = false;
-    renderQuizResultBlob(buildResultCardText(tRef.current, correctTotal, questionQueue.length, easyMode, accuracyPercent, totalScore, rankedHistory, lang))
-      .then((b) => {
-        if (!cancelled) resultBlobRef.current = b;
-      })
-      .catch(() => {
-        /* 저장 버튼을 누를 때 다시 시도 */
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [phase, questionQueue.length, correctTotal, accuracyPercent, totalScore, easyMode, lang, rankedHistory]);
-
-  const shareUrl = buildQuizShareUrl({ correct: correctTotal, total: questionQueue.length, easy: easyMode, score: totalScore });
+  const shareUrl = buildQuizShareUrl({ correct: correctTotal, total: questionQueue.length, easy: easyMode, score: totalScore, clipMode });
   const tweetText = t("quizShareTweetText", {
     title: t("quizTitle"),
-    mode: easyMode ? t("quizModeEasyShort") : t("quizModeHardShort"),
+    mode: `${easyMode ? t("quizModeEasyShort") : t("quizModeHardShort")} · ${t(clipMode === "start" ? "quizClipStart" : "quizClipRandom")}`,
     total: questionQueue.length,
     correct: correctTotal,
     percent: accuracyPercent,
     score: totalScore
   });
   const tweetUrl = buildTweetIntentUrl({ text: tweetText, url: shareUrl, hashtags: QUIZ_SHARE_HASHTAGS });
-  const canNativeShare =
-    phase === "summary" &&
-    typeof navigator.canShare === "function" &&
-    (() => {
-      try {
-        return navigator.canShare({ files: [new File([new Blob()], "x.png", { type: "image/png" })] });
-      } catch {
-        return false;
-      }
-    })();
-
   const makeResultBlob = async (): Promise<Blob> => {
-    if (resultBlobRef.current) return resultBlobRef.current;
     const b = await renderQuizResultBlob(
-      buildResultCardText(t, correctTotal, questionQueue.length, easyMode, accuracyPercent, totalScore, rankedHistory, lang)
+      buildResultCardText(t, correctTotal, questionQueue.length, easyMode, accuracyPercent, totalScore, history, lang, clipMode)
     );
-    resultBlobRef.current = b;
     return b;
   };
 
@@ -1033,30 +1414,16 @@ export default function SongQuiz({ lang, t }: SongQuizProps) {
     copiedTimerRef.current = window.setTimeout(() => setCopied(false), 2000);
   };
 
-  // 휴대폰의 공유 창으로 이미지와 글을 함께 보냄 (X 앱 등을 고를 수 있음)
+  // 이미지를 따로 저장할 때 인앱 브라우저에 표시되는 미리보기의 선택적 공유 기능.
+  // X 글쓰기 버튼에서는 이 함수를 호출하지 않습니다.
   const shareFile = async (blob: Blob) => {
     try {
       await navigator.share({
         files: [new File([blob], "song-quiz-result.png", { type: "image/png" })],
-        text: tweetText,
-        url: shareUrl
+        text: `${buildQuizNativeShareText(tweetText)}\n${shareUrl}`
       });
     } catch (e) {
       if ((e as Error)?.name !== "AbortError") alert(t("quizShareFailed"));
-    }
-  };
-  const handleNativeShare = async () => {
-    if (resultBlobRef.current) {
-      await shareFile(resultBlobRef.current);
-      return;
-    }
-    setShareBusy(true);
-    try {
-      await shareFile(await makeResultBlob());
-    } catch {
-      alert(t("quizShareImageFail"));
-    } finally {
-      setShareBusy(false);
     }
   };
 
@@ -1111,7 +1478,7 @@ export default function SongQuiz({ lang, t }: SongQuizProps) {
             <div className="sq-challenge" role="note">
               <span>
                 {t(challenge.score === undefined ? "quizChallengeBanner" : "quizChallengeBannerScore", {
-                  mode: challenge.easy ? t("quizModeEasyShort") : t("quizModeHardShort"),
+                  mode: `${challenge.easy ? t("quizModeEasyShort") : t("quizModeHardShort")} · ${t(challenge.clipMode === "start" ? "quizClipStart" : "quizClipRandom")}`,
                   total: challenge.total,
                   correct: challenge.correct,
                   percent: Math.round((challenge.correct / challenge.total) * 100),
@@ -1146,6 +1513,19 @@ export default function SongQuiz({ lang, t }: SongQuizProps) {
               </button>
             </div>
             <p className="sq-note">{easyMode ? t("quizEasyHint") : t("quizHardHint")}</p>
+          </div>
+
+          <div className="sq-field">
+            <h3 className="sq-label">{t("quizClipModeTitle")}</h3>
+            <div className="sq-seg">
+              {(["random", "start"] as const).map((mode) => (
+                <button type="button" key={mode} className={`sq-seg-btn${clipMode === mode ? " is-on" : ""}`}
+                  aria-pressed={clipMode === mode} onClick={() => setClipMode(mode)}>
+                  {t(mode === "random" ? "quizClipRandom" : "quizClipStart")}
+                </button>
+              ))}
+            </div>
+            <p className="sq-note">{t(clipMode === "random" ? "quizClipRandomHint" : "quizClipStartHint")}</p>
           </div>
 
           <div className="sq-field">
@@ -1296,17 +1676,30 @@ export default function SongQuiz({ lang, t }: SongQuizProps) {
         {/* 정답/포기 후에만 크게 보이는 영상 */}
         <div className={`sq-video${revealed ? " is-on" : ""}`}>
           <div className="sq-video-frame">
-            <div ref={playerHostRef} />
+            {revealed && currentSong && usingHostedAudio ? (
+              // 정답 공개 후에만 iframe 생성. 그 전에는 영상 제목도 로드되지 않습니다.
+              <iframe
+                key={currentSong.id}
+                title="YouTube answer video"
+                src={`https://www.youtube.com/embed/${currentSong.videoId}?start=${Math.floor(startSec)}&playsinline=1&rel=0`}
+                allow="autoplay; encrypted-media; picture-in-picture; fullscreen"
+                allowFullScreen
+                style={{ width: "100%", height: "100%", border: 0 }}
+              />
+            ) : (
+              <div ref={playerHostRef} />
+            )}
           </div>
         </div>
 
         {playing && currentSong && !revealed && (
           <div className="sq-stage">
             <div className="sq-listen">
+              <p className="sq-note">{t(clipMode === "random" ? "quizClipRandom" : "quizClipStart")}</p>
               <button
                 type="button"
                 className={`sq-play-btn${isPlayingAudio ? " is-playing" : ""}`}
-                disabled={loadingAudio}
+                disabled={preparingAudio || loadingAudio || isPlayingAudio}
                 onClick={() => playSnippet()}
               >
                 {loadingAudio
@@ -1315,27 +1708,31 @@ export default function SongQuiz({ lang, t }: SongQuizProps) {
                   ? t("quizPlaying")
                   : t("quizPlayClip", { sec: clipDuration })}
               </button>
+              {preparingAudio && !loadingAudio && !isPlayingAudio && (
+                <p className="sq-preparing" role="status" aria-live="polite">
+                  {t("quizLoadingAudio")}
+                </p>
+              )}
               <div className="sq-tools">
                 {clipDuration < 5 && (
-                  <button type="button" className="sq-pill" onClick={extendDuration}>
+                  <button type="button" className="sq-pill" disabled={preparingAudio || loadingAudio || isPlayingAudio} onClick={extendDuration}>
                     {t("quizExtendSec", { sec: clipDuration + 1 })}
                   </button>
                 )}
-                <button type="button" className="sq-pill" onClick={rerollSpot}>
-                  {t("quizChangeSpot")}
-                </button>
-                {!showUnitHint && (
-                  <button type="button" className="sq-pill" onClick={() => setShowUnitHint(true)}>
-                    {t("quizShowUnitHint")}
+                {clipMode === "random" && (
+                  <button type="button" className="sq-pill" disabled={preparingAudio || loadingAudio || isPlayingAudio} onClick={rerollSpot}>
+                    {t("quizChangeSpot")}
                   </button>
                 )}
               </div>
-              {showUnitHint && (
-                <p className="sq-hint-banner">
-                  {t("quizUnitHintText", { unit: unitNameMap[currentSong.unit] || currentSong.unit })}
+              {isInAppBrowser && (
+                <p className="sq-inapp-notice" role="note">{t("quizInAppBrowserNotice")}</p>
+              )}
+              {playerError && (
+                <p className="sq-alert" role="alert">
+                  {autoplayBlocked ? t("quizPlaybackBlocked") : isInAppBrowser ? t("quizInAppPlaybackError") : t("quizPlayerError")}
                 </p>
               )}
-              {playerError && <p className="sq-alert">{t("quizPlayerError")}</p>}
             </div>
 
             <div className="sq-answer">
@@ -1358,12 +1755,13 @@ export default function SongQuiz({ lang, t }: SongQuizProps) {
                     aria-activedescendant={listOpen && suggestions[activeIdx] ? `sq-opt-${activeIdx}` : undefined}
                     onChange={(e) => {
                       setGuess(e.target.value);
+                      setActiveIdx(0);
                       setShowSuggestions(true);
                     }}
                     onFocus={() => setShowSuggestions(true)}
                     onBlur={() => setShowSuggestions(false)}
                     onKeyDown={onInputKeyDown}
-                    placeholder={t("quizInputPlaceholder")}
+                    placeholder={easyMode ? t("quizEasyInputPlaceholder") : t("quizInputPlaceholder")}
                   />
                   {listOpen && (
                     <ul id="sq-suggest" ref={listRef} role="listbox" className="sq-suggest" aria-label={t("quizSuggestionsLabel")}>
@@ -1381,7 +1779,7 @@ export default function SongQuiz({ lang, t }: SongQuizProps) {
                             onMouseDown={(e) => e.preventDefault()}
                             onClick={() => submitSuggestion(s)}
                           >
-                            <span className="sq-sug-unit">{unitNameMap[s.unit] || s.unit}</span>
+                            <span className="sq-sug-unit">{formatFullUnitLabel(s)}</span>
                             <span className="sq-sug-title">{formatSongDisplay(s)}</span>
                           </li>
                         ))
@@ -1560,11 +1958,6 @@ export default function SongQuiz({ lang, t }: SongQuizProps) {
               <button type="button" className="sq-share-btn" onClick={() => handleCopyLink()}>
                 {copied ? t("quizShareCopied") : t("quizShareCopyLink")}
               </button>
-              {canNativeShare && (
-                <button type="button" className="sq-share-btn sq-share-wide" disabled={shareBusy} onClick={handleNativeShare}>
-                  {t("quizShareNative")}
-                </button>
-              )}
             </div>
             <p className="sq-share-note">{t("quizShareImageHint")}</p>
           </div>
