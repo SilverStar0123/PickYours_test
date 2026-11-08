@@ -956,7 +956,7 @@ function PickYoursMain({ sheetId, onSwitchSheet }: {
       desc: t("navDescQuiz"),
       hashPath: "#/quiz"
     },
-    { id: "taste", icon: "📊", title: tasteTitle[lang], desc: lang === "ko" ? "유닛별 선택과 언어별 취향" : lang === "ja" ? "ユニット別・言語別の選択傾向" : "Selections by unit and language", hashPath: "#/taste" }
+    { id: "taste", icon: "📊", title: tasteTitle[lang], desc: lang === "ko" ? "함께 선택된 캐릭터로 찾는 취향" : lang === "ja" ? "一緒に選ばれるキャラクター" : "Discover co-selected characters", hashPath: "#/taste" }
   ];
 
   const currentService = serviceList.find((s) => s.id === activeTab) || serviceList[0];
