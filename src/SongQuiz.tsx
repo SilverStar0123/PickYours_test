@@ -1895,9 +1895,13 @@ export default function SongQuiz({ lang, t }: SongQuizProps) {
           </div>
 
           {percentile && (
-            <p className="sq-percentile" role="status">
-              {t("quizTopPercentile", { percent: percentile.topPercent, samples: percentile.samples })}
-            </p>
+            <div className="sq-percentile" role="status">
+              <span className="sq-percentile-label">{t("quizPercentileLabel")}</span>
+              <strong className="sq-percentile-value">
+                {t("quizTopPercentile", { percent: percentile.topPercent })}
+              </strong>
+              <span className="sq-percentile-note">{t("quizPercentileNote")}</span>
+            </div>
           )}
 
           <h3 className="sq-label sq-hist-head">
