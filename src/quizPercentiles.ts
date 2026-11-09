@@ -42,7 +42,8 @@ export function calculateQuizPercentile(
       !bucket.counts.every((v) => Number.isInteger(v) && v >= 0) ||
       bucket.counts.reduce((a, b) => a + b, 0) !== bucket.total ||
       !Number.isInteger(score) || score < 0 || score > 100) return null;
-  // 동점자는 그 점수 구간의 중간 순위를 사용 (mid-rank).
+  // 최저 점수 0점은 상위 100%로 표시. 그 외 동점자는 중간 순위 사용.
+  if (score === 0) return { topPercent: 100, samples: bucket.total };
   const higher = bucket.counts.slice(score + 1).reduce((a, b) => a + b, 0);
   const topPercent = Math.max(0, Math.min(100, Math.round((higher + bucket.counts[score] / 2) / bucket.total * 1000) / 10));
   return { topPercent, samples: bucket.total };

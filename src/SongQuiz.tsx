@@ -1377,9 +1377,19 @@ export default function SongQuiz({ lang, t }: SongQuizProps) {
   });
   const tweetUrl = buildTweetIntentUrl({ text: tweetText, url: shareUrl, hashtags: QUIZ_SHARE_HASHTAGS });
   const makeResultBlob = async (): Promise<Blob> => {
-    const b = await renderQuizResultBlob(
-      buildResultCardText(t, correctTotal, questionQueue.length, easyMode, accuracyPercent, totalScore, history, lang, clipMode)
+    // 저장을 바로 눌러도 분포 로딩을 기다려 화면과 같은 계산 결과를 사용합니다.
+    const data = await loadQuizPercentileData();
+    const rank = calculateQuizPercentile(
+      data, easyMode ? "easy" : "hard", questionQueue.length, runPool, totalScore, clipMode
     );
+    const b = await renderQuizResultBlob({
+      ...buildResultCardText(t, correctTotal, questionQueue.length, easyMode, accuracyPercent, totalScore, history, lang, clipMode),
+      percentile: rank ? {
+        label: t("quizPercentileLabel"),
+        value: t("quizTopPercentile", { percent: rank.topPercent }),
+        note: t("quizPercentileNote")
+      } : undefined
+    });
     return b;
   };
 
