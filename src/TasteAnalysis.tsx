@@ -6,6 +6,7 @@ import { avatarUri, onImgError } from './assets';
 import { validateSimilarData } from './similarTaste';
 import type { SimilarData, Character } from './similarTaste';
 import './tasteAnalysis.css';
+import { TASTE_UNIT_ORDER, orderedTasteCatalog } from './tasteOrder';
 export const tasteTitle = { ko:'취향 분석', en:'Taste insights', ja:'好み分析' };
 const texts = {
  ko:{ intro:'좋아하는 캐릭터로 발견하는 또 다른 취향', all:'전체', ko:'한국어 이용자', ja:'일본어 이용자', en:'영어 이용자', choose:'좋아하는 캐릭터를 골라주세요', unit:'유닛 선택', character:'캐릭터 선택', prompt:'캐릭터를 선택하면 함께 선택되는 취향을 보여드려요.', heading:'함께 발견한 취향 · TOP 3', description:'이 캐릭터를 고른 사람들의 선택에서 찾은 조합이에요.', equal:'카드는 순위를 매기지 않고 이름순으로 보여드려요.', empty:'아직 조건을 충족하는 조합이 부족해요.', emptyHint:'취향이 비슷한 캐릭터가 없다는 뜻은 아니에요. 기록이 더 쌓이면 결과가 달라질 수 있어요.', partial:'현재 분석 기준을 충족한 조합만 보여드려요.', date:'데이터 추출일', method:'어떻게 찾았나요?', methodText:'같은 두 유닛에 응답한 기록끼리 비교하고, 각 캐릭터의 평소 선택률을 고려해 함께 선택되는 경향을 찾았어요. 현재는 언어 기록 여부와 관계없이 전체 데이터를 사용해요. 성격이나 캐릭터의 가치를 평가하는 결과는 아니에요.', excluded:'선택지가 한 명뿐인 유닛은 분석에서 제외했어요.', loading:'취향을 불러오는 중…', error:'분석 데이터를 불러오지 못했어요.', retry:'다시 시도' },
@@ -29,9 +30,9 @@ export default function TasteAnalysis({lang}:{lang:Lang}) {
  const memberFor=(c:Character)=>groupFor(c.unit)?.members.find(m=>m.id===c.id||m.name===c.name);
  const name=(c:Character)=>memberFor(c)?.names?.[lang]||c.name;
  const unitName=(u:string)=>groupFor(u)?.names?.[lang]||groupFor(u)?.name||u;
- const catalog=data?.groups.all.characters||[];
- const units=Array.from(new Set(catalog.map(c=>c.unit))).sort((a,b)=>unitName(a).localeCompare(unitName(b),lang));
- const options=catalog.filter(c=>c.unit===unit).sort((a,b)=>name(a).localeCompare(name(b),lang));
+ const catalog=orderedTasteCatalog(data?.groups.all.characters||[]);
+ const units=TASTE_UNIT_ORDER.filter(u=>catalog.some(c=>c.unit===u));
+ const options=catalog.filter(c=>c.unit===unit);
  const chosen=catalog.find(c=>c.id===id);
  const profile=data?.groups.all.characters.find(c=>c.id===id);
  // Keep the computed top three, but present them alphabetically, without a podium.
