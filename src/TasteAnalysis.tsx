@@ -3,8 +3,9 @@ import type { Lang } from './i18n';
 import type { Group } from './types';
 import { loadAgencies } from './csv';
 import { avatarUri, onImgError } from './assets';
-import { validateSimilarData } from './similarTaste';
-import type { SimilarData, Character } from './similarTaste';
+import { validateTastePairs, pairKey } from './tastePairs';
+import type { TastePairs } from './tastePairs';
+import type { Character } from './similarTaste';
 import './tasteAnalysis.css';
 import { TASTE_UNIT_ORDER, orderedTasteCatalog } from './tasteOrder';
 export const tasteTitle = { ko:'취향 분석', en:'Taste insights', ja:'好み分析' };
@@ -15,13 +16,14 @@ const texts = {
 };
 export default function TasteAnalysis({lang}:{lang:Lang}) {
  const t=texts[lang];
- const [data,setData]=useState<SimilarData|null>(null),[groups,setGroups]=useState<Group[]>([]);
+ const [data,setData]=useState<TastePairs|null>(null),[groups,setGroups]=useState<Group[]>([]);
  const [unit,setUnit]=useState(''),[id,setId]=useState('');
+ const [second,setSecond]=useState(false),[unit2,setUnit2]=useState(''),[id2,setId2]=useState('');
  const [error,setError]=useState(false),[retry,setRetry]=useState(0);
  useEffect(()=>{
   let active=true;const controller=new AbortController();setError(false);setData(null);
-  fetch(`${process.env.PUBLIC_URL || '.'}/similar-taste.json`,{signal:controller.signal,cache:'no-cache'})
-   .then(r=>{if(!r.ok)throw Error();return r.json();}).then(validateSimilarData)
+  fetch(`${process.env.PUBLIC_URL || '.'}/similar-taste-pairs.json`,{signal:controller.signal,cache:'no-cache'})
+   .then(r=>{if(!r.ok)throw Error();return r.json();}).then(validateTastePairs)
    .then(d=>{if(active)setData(d);}).catch(()=>{if(active)setError(true);});
   void loadAgencies().then(a=>{if(active)setGroups(a.flatMap(x=>x.groups));}).catch(()=>{});
   return()=>{active=false;controller.abort();};
@@ -30,24 +32,36 @@ export default function TasteAnalysis({lang}:{lang:Lang}) {
  const memberFor=(c:Character)=>groupFor(c.unit)?.members.find(m=>m.id===c.id||m.name===c.name);
  const name=(c:Character)=>memberFor(c)?.names?.[lang]||c.name;
  const unitName=(u:string)=>groupFor(u)?.names?.[lang]||groupFor(u)?.name||u;
- const catalog=orderedTasteCatalog(data?.groups.all.characters||[]);
+ const catalog=orderedTasteCatalog(data?.characters||[]);
  const units=TASTE_UNIT_ORDER.filter(u=>catalog.some(c=>c.unit===u));
  const options=catalog.filter(c=>c.unit===unit);
  const chosen=catalog.find(c=>c.id===id);
- const profile=data?.groups.all.characters.find(c=>c.id===id);
+ const chosen2=second?catalog.find(c=>c.id===id2):undefined;
+ const pair=chosen2?data?.pairResults.find(p=>pairKey(p.characterIds)===pairKey([id,id2])):undefined;
+ const profile=chosen2?pair:data?.singleResults[id];
+ const extra={
+  ko:{first:'최애',second:'차애',add:'차애 추가하기',remove:'차애 선택 취소',joint:'두 캐릭터를 모두 고른 기록에서 찾은 조합이에요.',overlap:'각 캐릭터의 선택자 집단에서 공통으로 발견한 취향이에요.',pending:'차애를 고르면 두 캐릭터의 취향을 함께 분석해요.',method:'다른 유닛은 두 캐릭터를 모두 고른 기록을 분석해요. 같은 유닛은 각각의 선택자 집단에서 공통으로 연관성이 높은 캐릭터를 찾아요. 최애와 차애를 바꿔도 결과는 같아요.'},
+  en:{first:'Favorite',second:'Second favorite',add:'Add a second favorite',remove:'Remove second favorite',joint:'Connections from records selecting both characters.',overlap:'Connections shared by the two separate groups of selectors.',pending:'Choose a second favorite to explore both characters together.',method:'For different units, we analyze records selecting both characters. For the same unit, we find connections shared by their separate groups of selectors. Reversing the two favorites gives the same result.'},
+  ja:{first:'最推し',second:'二推し',add:'二推しを追加',remove:'二推しの選択を解除',joint:'二人とも選んだ記録から見つけた組み合わせです。',overlap:'それぞれを選んだ人たちに共通する好みです。',pending:'二推しを選ぶと、二人の好みを一緒に分析します。',method:'別ユニットの場合は二人とも選んだ記録を分析します。同じユニットの場合は、それぞれを選んだ集団に共通する関連を探します。二人の選択順を入れ替えても結果は同じです。'}
+ }[lang];
  // Keep the computed top three, but present them alphabetically, without a podium.
  const recommendations=[...(profile?.recommendations||[])].sort((a,b)=>name(a).localeCompare(name(b),lang)||a.id.localeCompare(b.id));
  const portrait=(c:Character)=> <img src={memberFor(c)?.img||avatarUri(c.name)} onError={onImgError(avatarUri(c.name))} alt="" loading="lazy"/>;
  return <section className="taste-page">
   <header className="taste-hero"><span className="taste-eyebrow">PICK YOUR STAR · CONNECTIONS</span><h1>{tasteTitle[lang]}</h1><p>{t.intro}</p></header>
   {error?<div className="taste-state" role="alert"><p>{t.error}</p><button onClick={()=>setRetry(n=>n+1)}>{t.retry}</button></div>:!data?<p className="taste-state" role="status">{t.loading}</p>:<>
-   <div className="taste-picker"><h2>{t.choose}</h2><div><label>{t.unit}<select value={unit} onChange={e=>{setUnit(e.target.value);setId('');}}><option value="">—</option>{units.map(u=><option key={u} value={u}>{unitName(u)}</option>)}</select></label><label>{t.character}<select value={id} disabled={!unit} onChange={e=>setId(e.target.value)}><option value="">—</option>{options.map(c=><option key={c.id} value={c.id}>{name(c)}</option>)}</select></label></div></div>
+   <div className="taste-picker"><h2>{t.choose} · {extra.first}</h2><div><label>{t.unit}<select value={unit} onChange={e=>{setUnit(e.target.value);setId('');setId2('');}}><option value="">—</option>{units.map(u=><option key={u} value={u}>{unitName(u)}</option>)}</select></label><label>{t.character}<select value={id} disabled={!unit} onChange={e=>{setId(e.target.value);if(e.target.value===id2)setId2('');}}><option value="">—</option>{options.map(c=><option key={c.id} value={c.id}>{name(c)}</option>)}</select></label></div></div>
+   {chosen&&<div className="taste-picker">
+    <button type="button" aria-expanded={second} onClick={()=>{setSecond(!second);setUnit2('');setId2('');}}>{second?extra.remove:extra.add}</button>
+    {second&&<><h2>{extra.second}</h2><div><label>{t.unit}<select value={unit2} onChange={e=>{setUnit2(e.target.value);setId2('');}}><option value="">—</option>{units.filter(u=>catalog.some(c=>c.unit===u&&c.id!==id)).map(u=><option key={u} value={u}>{unitName(u)}</option>)}</select></label><label>{t.character}<select value={id2} disabled={!unit2} onChange={e=>setId2(e.target.value)}><option value="">—</option>{catalog.filter(c=>c.unit===unit2&&c.id!==id).map(c=><option key={c.id} value={c.id}>{name(c)}</option>)}</select></label></div>{!chosen2&&<p>{extra.pending}</p>}</>}
+   </div>}
    {!chosen?<p className="taste-state">{t.prompt}</p>:<div className="taste-results" aria-live="polite">
     <div className="taste-chosen">{portrait(chosen)}<div><span>{unitName(chosen.unit)}</span><h2>{name(chosen)}</h2></div></div>
-    <header className="taste-result-heading"><h2>{t.heading}</h2><p>{t.description}</p></header>
+    {chosen2&&<div className="taste-chosen">{portrait(chosen2)}<div><span>{extra.second} · {unitName(chosen2.unit)}</span><h2>{name(chosen2)}</h2></div></div>}
+    <header className="taste-result-heading"><h2>{t.heading}</h2><p>{chosen2?(chosen?.unit===chosen2.unit?extra.overlap:extra.joint):t.description}</p></header>
     {recommendations.length?<><div className="taste-grid">{recommendations.map(c=><article className="taste-card" key={c.id}>{portrait(c)}<p>{unitName(c.unit)}</p><h3>{name(c)}</h3></article>)}</div><p className="taste-note">{t.equal}</p>{recommendations.length<3&&<p className="taste-note">{t.partial}</p>}</>:<div className="taste-state"><h3>{t.empty}</h3><p>{t.emptyHint}</p></div>}
    </div>}
-   <footer className="taste-footer"><p>{t.date} · {data.dataExportedOn}</p><details><summary>{t.method}</summary><p>{t.methodText}</p><p>{t.excluded}</p></details></footer>
+   <footer className="taste-footer"><details><summary>{t.method}</summary><p>{t.methodText}</p><p>{extra.method}</p><p>{t.excluded}</p></details></footer>
   </>}
  </section>;
 }
