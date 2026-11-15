@@ -161,7 +161,7 @@ function fitText(ctx: CanvasRenderingContext2D, text: string, maxW: number): str
 // 상단 정답률/점수는 유지하고, 하단은 실제 문제별 재생 기록으로 표시합니다.
 export function renderQuizResultBlob(c: ResultCardText): Promise<Blob> {
   const W = 1200;
-  const rankHeight = c.percentile ? 200 : 0;
+  const rankHeight = c.percentile ? 160 : 0;
   const H = 980 + rankHeight;
   const S = 2;
   const canvas = document.createElement("canvas");
@@ -261,7 +261,7 @@ export function renderQuizResultBlob(c: ResultCardText): Promise<Blob> {
 
   if (c.percentile) {
     ctx.fillStyle = "#f3edfc";
-    roundRect(ctx, 96, 440, W - 192, 180, 24);
+    roundRect(ctx, 96, 440, W - 192, 140, 24);
     ctx.fill();
     ctx.textAlign = "center";
     ctx.fillStyle = "#665081";
@@ -270,9 +270,6 @@ export function renderQuizResultBlob(c: ResultCardText): Promise<Blob> {
     ctx.fillStyle = "#6940aa";
     ctx.font = `800 62px ${FONT}`;
     ctx.fillText(c.percentile.value, W / 2, 546, W - 240);
-    ctx.fillStyle = "#6f6480";
-    ctx.font = `500 21px ${FONT}`;
-    ctx.fillText(c.percentile.note, W / 2, 589, W - 240);
   }
   ctx.save();
   ctx.translate(0, rankHeight);
