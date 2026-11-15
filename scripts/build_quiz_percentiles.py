@@ -10,15 +10,22 @@ def valid_score_record(d):
     """현재 quizScores 문서 스키마와 점수 범위가 일치하는지 검증."""
     mode, pool, count, score = (d.get(k) for k in ('mode', 'pool', 'questionCount', 'score'))
     perfect, other, giveup = (d.get(k) for k in ('perfect', 'otherCorrect', 'giveup'))
-    if (mode not in ('easy', 'hard') or pool not in ('all', 'filtered') or
+    if (mode not in ('easy', 'hard') or pool not in ('all', 'filtered', 'unit') or
             type(count) is not int or not 1 <= count <= 100 or
             type(score) is not int or not 0 <= score <= 100 or
-            d.get('v') not in (1, 2) or
+            d.get('v') not in (1, 2, 3) or
             any(type(x) is not int or x < 0 or x > count for x in (perfect, other, giveup)) or
             perfect + other + giveup != count):
         return False
     clip = d.get('clipMode')
-    if (d.get('v') == 1 and clip is not None) or (d.get('v') == 2 and clip not in ('random', 'start')):
+    if (d.get('v') == 1 and clip is not None) or (d.get('v') in (2, 3) and clip not in ('random', 'start')):
+        return False
+    if d.get('v') == 3:
+        if pool not in ('all', 'unit'):
+            return False
+        if pool == 'unit' and (not isinstance(d.get('unitId'), str) or not d['unitId'].strip()):
+            return False
+    elif pool == 'unit':
         return False
     correct = perfect + other
     # 정답 10~100점, 포기 0점이며 평균은 소수점 반올림됨.
@@ -48,6 +55,8 @@ def build_groups(records, max_per_user_day=5):
         completed_at = d['completedAt']
         day = completed_at.astimezone(datetime.timezone.utc).strftime('%Y-%m-%d')
         group = f'{d.get("clipMode") or "random"}:{d["mode"]}:{d["questionCount"]}:{d["pool"]}'
+        if d['pool'] == 'unit':
+            group += ':' + d['unitId']
         key = (uid, day, group)
         if max_per_user_day > 0 and daily_counts[key] >= max_per_user_day:
             excluded += 1
