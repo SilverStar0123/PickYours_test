@@ -29,7 +29,7 @@ export function loadQuizPercentileData(): Promise<DataFile | null> {
 
 export function calculateQuizPercentile(
   data: DataFile | null, mode: "easy" | "hard", questionCount: number,
-  pool: "all" | "filtered", score: number, clipMode: "random" | "start" = "random"
+  pool: "all" | "unit" | "filtered", score: number, clipMode: "random" | "start" = "random"
 ): QuizPercentile | null {
   // 필터별 곡 구성이 서로 다르므로 filtered 결과의 백분위는 표시하지 않음.
   // 점수 원본은 저장되어 이후 분석에 사용할 수 있음.
