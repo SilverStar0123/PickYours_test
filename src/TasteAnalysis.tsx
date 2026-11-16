@@ -7,6 +7,7 @@ import { validateTastePairs, pairKey } from './tastePairs';
 import type { TastePairs } from './tastePairs';
 import type { Character } from './similarTaste';
 import './tasteAnalysis.css';
+import TasteUnitDetails from './TasteUnitDetails';
 import { buildTasteShareUrl, readTasteSelection, renderTasteCard } from './tasteShare';
 import { copyText } from './utils';
 import { triggerDownload } from './imageExport';
@@ -105,6 +106,7 @@ export default function TasteAnalysis({lang}:{lang:Lang}) {
     {chosen2&&<div className="taste-chosen">{portrait(chosen2)}<div><span>{unitName(chosen2.unit)}</span><h2>{name(chosen2)}</h2></div></div>}
     <header className="taste-result-heading"><h2>{t.heading}</h2><p>{chosen2?(chosen?.unit===chosen2.unit?extra.overlap:extra.joint):t.description}</p></header>
     {recommendations.length?<><div className="taste-grid">{recommendations.map(c=><article className="taste-card" key={c.id}>{portrait(c)}<p>{unitName(c.unit)}</p><h3>{name(c)}</h3></article>)}</div><p className="taste-note">{t.equal}</p>{recommendations.length<3&&<p className="taste-note">{t.partial}</p>}</>:<div className="taste-state"><h3>{t.empty}</h3><p>{t.emptyHint}</p></div>}
+    {(!second||chosen2)&&<TasteUnitDetails lang={lang} ids={[chosen.id,...(chosen2?[chosen2.id]:[])]} catalog={catalog} name={name} unitName={unitName} portrait={portrait}/>}
     {(!second||chosen2)&&<div className="taste-share">
      <div className="taste-share-actions"><button type="button" onClick={saveImage} disabled={shareBusy}>{shareBusy?shareText.busy:shareText.save}</button><button type="button" onClick={copySelection}>{shareText.copy}</button></div>
      <p className="taste-note">{shareText.updated}</p><p role="status">{shareMessage}</p>
