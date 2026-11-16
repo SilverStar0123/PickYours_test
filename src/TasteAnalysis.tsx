@@ -8,8 +8,7 @@ import type { TastePairs } from './tastePairs';
 import type { Character } from './similarTaste';
 import './tasteAnalysis.css';
 import TasteUnitDetails from './TasteUnitDetails';
-import { buildTasteShareUrl, readTasteSelection, renderTasteCard } from './tasteShare';
-import { copyText } from './utils';
+import { readTasteSelection, renderTasteCard } from './tasteShare';
 import { triggerDownload } from './imageExport';
 import { TASTE_UNIT_ORDER, orderedTasteCatalog } from './tasteOrder';
 export const tasteTitle = { ko:'취향 분석', en:'Taste insights', ja:'好み分析' };
@@ -49,9 +48,9 @@ export default function TasteAnalysis({lang}:{lang:Lang}) {
  useEffect(()=>()=>{if(preview)URL.revokeObjectURL(preview);},[preview]);
  useEffect(()=>()=>{shareGeneration.current++;},[]);
  const shareText={
-  ko:{save:'결과 이미지 저장',copy:'선택한 조합 링크 복사',busy:'이미지 만드는 중…',copied:'링크를 복사했어요.',failed:'처리하지 못했어요. 다시 시도해주세요.',hint:'이미지를 길게 누르거나 우클릭해서 저장할 수도 있어요.',close:'미리보기 닫기',selected:'내가 좋아하는 캐릭터',result:'함께 발견한 취향',updated:'링크의 결과는 분석 데이터가 갱신되면 달라질 수 있어요.',ready:'저장용 이미지가 준비됐어요.'},
-  en:{save:'Save result image',copy:'Copy selection link',busy:'Creating image…',copied:'Link copied.',failed:'Could not complete. Please try again.',hint:'You can also hold or right-click the image to save it.',close:'Close preview',selected:'Characters I like',result:'Shared taste',updated:'Linked results may change when the analysis data is updated.',ready:'Your image is ready.'},
-  ja:{save:'結果画像を保存',copy:'選んだ組み合わせのリンクをコピー',busy:'画像を作成中…',copied:'リンクをコピーしました。',failed:'処理できませんでした。もう一度お試しください。',hint:'画像の長押しや右クリックでも保存できます。',close:'プレビューを閉じる',selected:'好きなキャラクター',result:'一緒に見つけた好み',updated:'分析データの更新により、リンク先の結果が変わる場合があります。',ready:'保存用の画像ができました。'}
+  ko:{save:'결과 이미지 저장',busy:'이미지 만드는 중…',failed:'처리하지 못했어요. 다시 시도해주세요.',hint:'이미지를 길게 누르거나 우클릭해서 저장할 수도 있어요.',close:'미리보기 닫기',selected:'내가 좋아하는 캐릭터',result:'함께 발견한 취향',ready:'저장용 이미지가 준비됐어요.'},
+  en:{save:'Save result image',busy:'Creating image…',failed:'Could not complete. Please try again.',hint:'You can also hold or right-click the image to save it.',close:'Close preview',selected:'Characters I like',result:'Shared taste',ready:'Your image is ready.'},
+  ja:{save:'結果画像を保存',busy:'画像を作成中…',failed:'処理できませんでした。もう一度お試しください。',hint:'画像の長押しや右クリックでも保存できます。',close:'プレビューを閉じる',selected:'好きなキャラクター',result:'一緒に見つけた好み',ready:'保存用の画像ができました。'}
  }[lang];
  const groupFor=(u:string)=>groups.find(g=>g.id===u);
  const memberFor=(c:Character)=>groupFor(c.unit)?.members.find(m=>m.id===c.id||m.name===c.name);
@@ -84,13 +83,6 @@ export default function TasteAnalysis({lang}:{lang:Lang}) {
   }catch{if(generation===shareGeneration.current)setShareMessage(shareText.failed);}
   finally{setShareBusy(false);}
  };
- const copySelection=async()=>{
-  if(!chosen)return;
-  const generation=shareGeneration.current;
-  try{const ok=await copyText(buildTasteShareUrl([chosen.id,...(chosen2?[chosen2.id]:[])]));
-   if(generation===shareGeneration.current)setShareMessage(ok?shareText.copied:shareText.failed);
-  }catch{if(generation===shareGeneration.current)setShareMessage(shareText.failed);}
- };
  const portrait=(c:Character)=> <img src={memberFor(c)?.img||avatarUri(c.name)} onError={onImgError(avatarUri(c.name))} alt="" loading="lazy"/>;
  return <section className="taste-page">
   <header className="taste-hero"><span className="taste-eyebrow">PICK YOUR STAR · CONNECTIONS</span><h1>{tasteTitle[lang]}</h1><p>{t.intro}</p></header>
@@ -108,8 +100,8 @@ export default function TasteAnalysis({lang}:{lang:Lang}) {
     {recommendations.length?<><div className="taste-grid">{recommendations.map(c=><article className="taste-card" key={c.id}>{portrait(c)}<p>{unitName(c.unit)}</p><h3>{name(c)}</h3></article>)}</div><p className="taste-note">{t.equal}</p>{recommendations.length<3&&<p className="taste-note">{t.partial}</p>}</>:<div className="taste-state"><h3>{t.empty}</h3><p>{t.emptyHint}</p></div>}
     {(!second||chosen2)&&<TasteUnitDetails lang={lang} ids={[chosen.id,...(chosen2?[chosen2.id]:[])]} catalog={catalog} name={name} unitName={unitName} portrait={portrait}/>}
     {(!second||chosen2)&&<div className="taste-share">
-     <div className="taste-share-actions"><button type="button" onClick={saveImage} disabled={shareBusy}>{shareBusy?shareText.busy:shareText.save}</button><button type="button" onClick={copySelection}>{shareText.copy}</button></div>
-     <p className="taste-note">{shareText.updated}</p><p role="status">{shareMessage}</p>
+     <div className="taste-share-actions"><button type="button" onClick={saveImage} disabled={shareBusy}>{shareBusy?shareText.busy:shareText.save}</button></div>
+     <p role="status">{shareMessage}</p>
      {preview&&<div className="taste-share-preview"><img src={preview} alt={shareText.result}/><p>{shareText.hint}</p><button type="button" onClick={()=>setPreview('')}>{shareText.close}</button></div>}
     </div>}
    </div>}
